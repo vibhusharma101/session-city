@@ -41,7 +41,10 @@ export function readPrompt(content) {
   return text ? { kind: 'prompt', text } : null;
 }
 
-const shortPath = (p) => String(p).replace(/\\/g, '/').split('/').filter(Boolean).slice(-3).join('/');
+// Last few path segments, minus Claude Code's encoded folder names
+// (e.g. "C--Users-name-project"), which would expose the user's home path.
+const shortPath = (p) => String(p).replace(/\\/g, '/').split('/')
+  .filter((seg) => seg && !/^[A-Za-z]--/.test(seg)).slice(-3).join('/');
 
 function toolTarget(name, input = {}) {
   switch (name) {
@@ -72,7 +75,13 @@ const VERBS = {
   WebSearch: 'Searched the web for', Agent: 'Sent a subagent to', Task: 'Sent a subagent to', Skill: 'Used skill',
   AskUserQuestion: 'Asked you a question', ToolSearch: 'Loaded tools',
 };
-const verb = (name) => VERBS[name] ?? name.replace(/^mcp__([^_]+(?:-[^_]+)*)__/, '$1 · ');
+function verb(name) {
+  if (VERBS[name]) return VERBS[name];
+  const mcp = name.match(/^mcp__(.+?)__(.+)$/);
+  if (!mcp) return name;
+  const action = mcp[2].replace(/_mcp$/, '').replace(/_/g, ' ');
+  return mcp[1] === 'claude-in-chrome' ? `Browser: ${action}` : `${mcp[1]}: ${action}`;
+}
 
 // Escapes first, then renders the two markdown marks that matter most for reading.
 const md = (s) => esc(s)
@@ -121,7 +130,7 @@ export function parseStory(text) {
       for (const c of content) {
         if (c.type === 'text' && c.text.trim()) current.items.push({ type: 'say', text: c.text.trim() });
         else if (c.type === 'tool_use') {
-          const tool = { type: 'tool', name: c.name, target: toolTarget(c.name, c.input), error: null };
+          const tool = { type: 'tool', name: c.name, target: toolTarget(c.name, c.input), error: null, at: o.timestamp };
           toolsById.set(c.id, tool);
           current.items.push(tool);
           if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(c.name)) {
@@ -133,6 +142,18 @@ export function parseStory(text) {
     }
   }
   return { chapters, files };
+}
+
+// The last few things Claude did, newest first, for the building interiors.
+export function recentActivity(text, n) {
+  const { chapters } = parseStory(text);
+  const tools = chapters.flatMap((c) => c.items).filter((it) => it.type === 'tool');
+  return tools.slice(-n).reverse().map((t) => ({
+    tool: t.name,
+    text: `${verb(t.name)} ${redact(t.target)}`.trim(),
+    failed: !!t.error,
+    at: t.at,
+  }));
 }
 
 const time = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';

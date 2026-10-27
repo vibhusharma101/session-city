@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redact, readPrompt, parseStory, renderReport } from '../src/report.js';
+import { redact, readPrompt, parseStory, renderReport, recentActivity } from '../src/report.js';
 import { summarize } from '../src/scan.js';
 
 test('redact masks common credential shapes', () => {
@@ -54,4 +54,20 @@ test('parseStory groups actions under the prompt and attaches errors', () => {
 
   const html = renderReport(text, { ...summarize(text), id: 'x', project: 'repo', status: 'closed' });
   assert.ok(html.includes('add tests') && html.includes('1 failing') && html.includes('test/a.test.js'));
+});
+
+test('recentActivity is newest first, readable, and hides home paths', () => {
+  const lines = [
+    { type: 'user', message: { content: 'go' } },
+    { type: 'assistant', timestamp: '2026-10-01T10:00:00Z', message: { content: [
+      { type: 'tool_use', id: 'a', name: 'Edit', input: { file_path: 'C:/Users/me/.claude/projects/C--Users-me-app/memory/goal.md' } },
+      { type: 'tool_use', id: 'b', name: 'mcp__claude-in-chrome__tabs_context_mcp', input: {} },
+      { type: 'tool_use', id: 'c', name: 'Bash', input: { command: 'curl -H "token=abcd1234secret"' } },
+    ] } },
+  ];
+  const acts = recentActivity(lines.map((l) => JSON.stringify(l)).join('\n'), 5);
+  assert.deepEqual(acts.map((a) => a.tool), ['Bash', 'mcp__claude-in-chrome__tabs_context_mcp', 'Edit']);
+  assert.ok(!acts[0].text.includes('abcd1234secret'), acts[0].text);
+  assert.equal(acts[1].text, 'Browser: tabs context');
+  assert.ok(!acts[2].text.includes('C--Users'), acts[2].text);
 });

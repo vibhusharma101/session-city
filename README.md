@@ -23,33 +23,62 @@ tab. Requires Node 18 or newer.
 npx github:vibhusharma101/session-city
 ```
 
+## Drive around
+
+On first open you pick a car: hatchback, jeep, taxi, camper van, pickup or
+convertible. Click any building and your car drives along the streets, pulls
+up, and you go inside. Click a street to just drive there. Drag to pan, scroll
+to zoom. The sky follows your local time (or pin it to day or night).
+
 ## Reading the city
 
 | You see | It means |
 |---|---|
 | District | A project (the folder you started Claude Code in) |
 | Building height | How many turns the session ran |
-| Lit windows, glow | Session is running right now |
-| Pulsing beacon | Session is waiting for you |
+| Lit windows, green ring on the roof | Session is working right now |
+| Yellow **!** above the roof | Session is waiting for you |
 | Flames | Live session hitting a lot of tool errors |
-| Orbiting drones | Subagents the session dispatched |
-| Dark building | Session is closed |
+| Drones circling | Subagents the session dispatched |
 
 Building types come from the session's dominant kind of work:
 
 - **Workshop** (crane): editing code
-- **Library**: reading and searching
+- **Library** (pitched roof): reading and searching
 - **Factory** (chimney): running commands
 - **Observatory** (dome): web and browser work
-- **HQ** (antenna): dispatching subagents
-- **Exchange** (spire): MCP tools
-- **Café**: mostly conversation
+- **HQ** (antenna and dish): dispatching subagents
+- **Exchange** (gold spire): MCP tools
+- **Café** (umbrella): mostly conversation
 
-Click a building for its stats, its tool breakdown and the command to resume it.
+## Inside a building
+
+Each room has a station for each kind of work: a bookshelf (reading and
+searching), a workbench (editing), a terminal (commands), a globe (web and
+browser), a switchboard (MCP tools) and a coffee machine. Hover one to see how
+much of that work the session did.
+
+The session's agent is the robot:
+
+- **Working:** it walks to the station for what it's doing right now, with
+  its latest action in a speech bubble
+- **Waiting for you:** it stands in the middle holding up a sign
+- **Idle:** it's at the coffee machine
+- **Closed:** it's asleep
+
+Subagents work at the desks in the middle. The side panel shows the stats,
+the latest actions, the full story and the command to resume the session.
+
+## Share your city
+
+**Share your city** makes a postcard of your city with your stats on it.
+Project names are hidden unless you turn them on. Download it, copy it, or
+post it to X or LinkedIn. The image is made on your machine and only goes
+where you put it.
 
 ## What happened in a session
 
-**See what happened in this session** opens the session as a story, built on your
+**Read the full story** (inside any building) opens the session as a story, built on your
 machine from its transcript:
 
 - every prompt you gave, in order, with Claude's replies

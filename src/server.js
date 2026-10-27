@@ -3,50 +3,66 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanCity, findTranscript, sessionStatus, summarize } from './scan.js';
-import { renderReport } from './report.js';
+import { renderReport, recentActivity } from './report.js';
 
-const INDEX = fileURLToPath(new URL('../public/index.html', import.meta.url));
+const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
 let lastRequest = Date.now();
+
+function send(res, status, type, body) {
+  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
+  res.end(body);
+}
+const json = (res, status, data) => send(res, status, 'application/json', JSON.stringify(data));
+
+function loadSession(id) {
+  const path = findTranscript(id);
+  const text = path && readFileSync(path, 'utf8');
+  const s = text && summarize(text);
+  return s ? { text, s } : null;
+}
 
 function handler(req, res) {
   lastRequest = Date.now();
   const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/api/ping') {
-    res.writeHead(200, { 'content-type': 'application/json' }).end('{"app":"session-city"}');
-    return;
-  }
-  if (url.pathname === '/api/city') {
+  const path = url.pathname;
+
+  if (path === '/api/ping') return json(res, 200, { app: 'session-city' });
+  if (path === '/api/city') {
     try {
-      const body = JSON.stringify(scanCity());
-      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      res.end(body);
+      return json(res, 200, scanCity());
     } catch (e) {
-      res.writeHead(500, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
+      return json(res, 500, { error: e.message });
     }
-    return;
   }
-  const story = url.pathname.match(/^\/session\/([^/]+)$/);
+
+  const activity = path.match(/^\/api\/session\/([^/]+)\/activity$/);
+  if (activity) {
+    const found = loadSession(activity[1]);
+    if (!found) return json(res, 404, { error: 'Session not found' });
+    return json(res, 200, { status: sessionStatus(activity[1]), actions: recentActivity(found.text, 8) });
+  }
+
+  const story = path.match(/^\/session\/([^/]+)$/);
   if (story) {
     const id = story[1];
-    const path = findTranscript(id);
-    const text = path && readFileSync(path, 'utf8');
-    const s = text && summarize(text);
-    if (!s) {
-      res.writeHead(404, { 'content-type': 'text/plain' }).end('Session not found');
-      return;
-    }
-    const cwd = s.cwd ?? '';
-    const html = renderReport(text, { ...s, id, project: cwd ? basename(cwd) : '', status: sessionStatus(id) });
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    res.end(html);
-    return;
+    const found = loadSession(id);
+    if (!found) return send(res, 404, 'text/plain', 'Session not found');
+    const cwd = found.s.cwd ?? '';
+    const html = renderReport(found.text, { ...found.s, id, project: cwd ? basename(cwd) : '', status: sessionStatus(id) });
+    return send(res, 200, TYPES['.html'], html);
   }
-  if (url.pathname === '/') {
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-    res.end(readFileSync(INDEX));
-    return;
+
+  // Static files: a flat allowlist of names, so no path can escape public/.
+  const file = path === '/' ? 'index.html' : path.slice(1);
+  const ext = file.match(/^[a-z0-9-]+(\.[a-z]+)$/)?.[1];
+  if (ext && TYPES[ext]) {
+    try {
+      return send(res, 200, TYPES[ext], readFileSync(PUBLIC + file));
+    } catch {
+      // fall through to 404
+    }
   }
   res.writeHead(404).end();
 }

@@ -33,17 +33,27 @@ export const BUILDINGS = {
 
 const cache = new Map(); // transcript path -> { mtimeMs, size, summary }
 
-export function classify(tools) {
-  const scores = {};
-  let total = 0;
+export function groupOf(name) {
+  return Object.keys(TOOL_GROUPS).find((g) => {
+    const { tools: list = [], prefix } = TOOL_GROUPS[g];
+    return list.includes(name) || (prefix && name.startsWith(prefix));
+  }) ?? null;
+}
+
+// Raw call counts per kind of work.
+export function groupCounts(tools) {
+  const counts = {};
   for (const [name, n] of Object.entries(tools)) {
-    total += n;
-    const group = Object.keys(TOOL_GROUPS).find((g) => {
-      const { tools: list = [], prefix } = TOOL_GROUPS[g];
-      return list.includes(name) || (prefix && name.startsWith(prefix));
-    });
-    if (group) scores[group] = (scores[group] || 0) + n * TOOL_GROUPS[group].weight;
+    const g = groupOf(name);
+    if (g) counts[g] = (counts[g] || 0) + n;
   }
+  return counts;
+}
+
+export function classify(tools) {
+  const total = Object.values(tools).reduce((a, b) => a + b, 0);
+  const scores = {};
+  for (const [g, n] of Object.entries(groupCounts(tools))) scores[g] = n * TOOL_GROUPS[g].weight;
   if (total < 3) return 'chat';
   const [best] = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   return best ? best[0] : 'chat';
@@ -62,6 +72,7 @@ export function summarize(text) {
     outputTokens: 0,
     errors: 0,
     tools: {},
+    lastTool: null,
     costUSD: null,
     linesAdded: null,
     linesRemoved: null,
@@ -91,7 +102,10 @@ export function summarize(text) {
       s.model = o.message.model || s.model;
       s.outputTokens += o.message.usage?.output_tokens || 0;
       for (const c of Array.isArray(o.message.content) ? o.message.content : []) {
-        if (c.type === 'tool_use') s.tools[c.name] = (s.tools[c.name] || 0) + 1;
+        if (c.type === 'tool_use') {
+          s.tools[c.name] = (s.tools[c.name] || 0) + 1;
+          s.lastTool = c.name;
+        }
       }
     } else if (o.type === 'user' && o.message && !o.isMeta && !o.isSidechain) {
       const content = o.message.content;
@@ -102,6 +116,8 @@ export function summarize(text) {
   }
   if (!s.startedAt) return null;
   s.kind = classify(s.tools);
+  s.groups = groupCounts(s.tools);
+  s.lastGroup = s.lastTool ? groupOf(s.lastTool) : null;
   s.building = BUILDINGS[s.kind];
   s.subagents = SUBAGENT_TOOLS.reduce((n, t) => n + (s.tools[t] || 0), 0);
   return s;
