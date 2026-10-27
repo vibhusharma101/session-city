@@ -1,47 +1,18 @@
-// "Share your city": renders a 1200x675 postcard of the city and offers ways to post it.
-import { drawCity, worldBounds, KINDS } from './world.js';
-import { iso } from './util.js';
+// "Share your city": a 1200x675 postcard of the 3D city, and ways to post it.
+import { KINDS } from './models.js';
 
 export const REPO_URL = 'https://github.com/vibhusharma101/session-city';
 
-function sky(ctx, w, h, night) {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  if (night > 0.5) { g.addColorStop(0, '#0d1430'); g.addColorStop(1, '#25305e'); }
-  else { g.addColorStop(0, '#8fd0ee'); g.addColorStop(1, '#e6f4ea'); }
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
-}
-
-export function renderPostcard(world, stats, { night, showNames, t, player }) {
+// `source` is a canvas holding a fresh render of the city.
+export function renderPostcard(source, stats, { night }) {
   const W = 1200, H = 675;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
-  sky(ctx, W, H, night);
-
-  // fit the city into the right two-thirds, leaving room for the caption
-  const b = worldBounds(world);
-  const area = { x: 360, y: 40, w: W - 400, h: H - 80 };
-  const s = Math.min(area.w / (b.x1 - b.x0), area.h / (b.y1 - b.y0), 1.6);
-  const ox = area.x + area.w / 2 - ((b.x0 + b.x1) / 2) * s;
-  const oy = area.y + area.h / 2 - ((b.y0 + b.y1) / 2) * s;
-  ctx.setTransform(s, 0, 0, s, ox, oy);
-  drawCity(ctx, world, { night, t, hover: null, selected: null, marker: false }, player);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  if (showNames) {
-    ctx.font = '600 13px system-ui, -apple-system, "Segoe UI", sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (const blk of world.blocks) {
-      if (!blk.name) continue;
-      const [wx, wy] = iso(blk.bx + blk.B, blk.by + blk.B);
-      const x = wx * s + ox, y = wy * s + oy + 14;
-      const w = ctx.measureText(blk.name).width + 16;
-      ctx.fillStyle = 'rgba(255,255,255,.92)';
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - 11, w, 22, 11); ctx.fill();
-      ctx.fillStyle = '#1d2333'; ctx.fillText(blk.name, x, y);
-    }
-  }
+  // cover-fit the render, nudged right so the caption card doesn't hide the city
+  const s = Math.max(W / source.width, H / source.height);
+  const w = source.width * s, h = source.height * s;
+  ctx.drawImage(source, (W - w) / 2 + 150, (H - h) / 2, w, h);
 
   // caption card
   const dark = night > 0.5;
@@ -88,7 +59,7 @@ export function cityStats(world) {
   for (const s of sessions) counts[s.kind] = (counts[s.kind] || 0) + 1;
   return {
     sessions: sessions.length,
-    projects: world.blocks.filter((b) => b.name).length,
+    projects: new Set(world.blocks.map((b) => b.name)).size,
     tallest: Math.max(0, ...sessions.map((s) => s.turns)),
     actions: sessions.reduce((n, s) => n + Object.values(s.tools || {}).reduce((a, b) => a + b, 0), 0),
     topKind: Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,

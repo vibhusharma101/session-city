@@ -1,10 +1,4 @@
-// Shared helpers for drawing an isometric world on a 2D canvas.
-export const TW = 64, TH = 32; // iso tile size in world pixels
-
-export const iso = (gx, gy) => [(gx - gy) * TW / 2, (gx + gy) * TH / 2];
-
-// inverse of iso(): world pixels back to (fractional) tile coordinates
-export const unIso = (x, y) => [y / TH + x / TW, y / TH - x / TW];
+// Small shared helpers.
 
 export function hash(str) {
   let h = 2166136261;
@@ -28,58 +22,28 @@ export function mix(a, b, p) {
 }
 export const shade = (hex, f) => mix(hex, f < 0 ? '#000000' : '#ffffff', Math.abs(f));
 
-export function poly(ctx, pts, fill, stroke) {
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.closePath();
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
-}
+export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// frame-rate independent smoothing towards a target
+export const damp = (k, dt) => 1 - Math.exp(-k * dt);
 
-export function ellipse(ctx, x, y, rx, ry, fill) {
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
-  ctx.fill();
-}
+export const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+export const easeOutBack = (t) => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2);
 
-export function inPoly([x, y], pts) {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i], [xj, yj] = pts[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+// A tiny tween manager, updated with the frame delta.
+export class Tweens {
+  constructor() { this.list = []; }
+  add(duration, onUpdate, easing = easeOutCubic, onDone) {
+    this.list.push({ t: 0, duration, onUpdate, easing, onDone });
   }
-  return inside;
-}
-
-// An iso box: footprint (gx, gy, w, d) in tiles, height h in pixels.
-// Returns the three visible faces so callers can add detail on top.
-export function box(ctx, gx, gy, w, d, h, color, z = 0) {
-  const up = ([x, y], dz) => [x, y - dz];
-  const T = iso(gx, gy), R = iso(gx + w, gy), B = iso(gx + w, gy + d), L = iso(gx, gy + d);
-  const left = [up(L, z), up(B, z), up(B, z + h), up(L, z + h)];
-  const right = [up(B, z), up(R, z), up(R, z + h), up(B, z + h)];
-  const top = [up(T, z + h), up(R, z + h), up(B, z + h), up(L, z + h)];
-  poly(ctx, left, shade(color, -0.12));
-  poly(ctx, right, shade(color, -0.28));
-  poly(ctx, top, shade(color, 0.12));
-  outline(ctx, [left[0], left[3], top[0], top[1], right[1], left[1]]);
-  return { left, right, top };
-}
-
-// Soft cartoon outline, the way farm-sim games draw their objects.
-export function outline(ctx, pts, alpha = 0.28) {
-  ctx.save();
-  ctx.strokeStyle = `rgba(60,40,30,${alpha})`;
-  ctx.lineWidth = 1;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.restore();
+  update(dt) {
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const tw = this.list[i];
+      tw.t += dt;
+      const k = Math.min(1, tw.t / tw.duration);
+      tw.onUpdate(tw.easing(k), k);
+      if (k >= 1) { this.list.splice(i, 1); tw.onDone?.(); }
+    }
+  }
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -102,4 +66,6 @@ export function span(a, b) {
 export const store = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, v) { try { localStorage.setItem(key, v); } catch { /* not persisted */ } },
+  json(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  setJson(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* not persisted */ } },
 };

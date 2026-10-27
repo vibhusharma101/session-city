@@ -23,22 +23,43 @@ tab. Requires Node 18 or newer.
 npx github:vibhusharma101/session-city
 ```
 
-## Drive around
+## Play
 
-On first open you pick a car: hatchback, jeep, taxi, camper van, pickup or
-convertible. Click any building and your car drives along the streets, pulls
-up, and you go inside. Click a street to just drive there. Drag to pan, scroll
-to zoom. The sky follows your local time (or pin it to day or night).
+Session City is a little 3D city-builder made of your real sessions.
+
+- **Move around:** drag to pan, scroll to zoom, right-drag or Q/E to rotate,
+  WASD or the arrow keys to pan. ⤢ shows the whole city.
+- **Your car:** the only car in town is yours. Click a building and it
+  drives over; click a street to just drive there. More cars unlock as you
+  level up.
+- **Coins:** every action an agent took (an edit, a search, a command) is a
+  coin waiting above its building. Click the coin to collect it.
+- **Levels:** collecting coins and finishing quests earns XP. Each level
+  unlocks a new car.
+- **Quests:** three daily goals, like collecting from three buildings,
+  answering a session that needs you, or exploring Old Town.
+- **Sound:** small synthesized blips for clicks, coins and level-ups. 🔊 mutes them.
+
+Coins, XP and quests are kept in your browser only.
 
 ## Reading the city
 
+Sessions live in three walled colonies, each with a gate onto the avenue:
+
+| Colony | Sessions | Looks like |
+|---|---|---|
+| **Uptown** | live, or used in the last 24 hours | hedges, gold gate, fountains, flower beds |
+| **Midtown** | used this week | white picket fence, tidy streets |
+| **Old Town** | untouched for a week or more | broken fence, dry grass, dead trees, boarded windows |
+
+Inside a colony each project gets its own block.
+
 | You see | It means |
 |---|---|
-| District | A project (the folder you started Claude Code in) |
 | Building height | How many turns the session ran |
-| Lit windows, green ring on the roof | Session is working right now |
-| Yellow **!** above the roof | Session is waiting for you |
-| Flames | Live session hitting a lot of tool errors |
+| Lit windows, green ripple on the ground | Session is working right now |
+| Bouncing yellow **!** | Session is waiting for you |
+| Gold coin with a number | Actions you haven't collected yet |
 | Drones circling | Subagents the session dispatched |
 
 Building types come from the session's dominant kind of work:
@@ -49,20 +70,21 @@ Building types come from the session's dominant kind of work:
 - **Observatory** (dome): web and browser work
 - **HQ** (antenna and dish): dispatching subagents
 - **Exchange** (gold spire): MCP tools
-- **Café** (umbrella): mostly conversation
+- **Café** (umbrellas): mostly conversation
 
 ## Inside a building
 
-Each room has a station for each kind of work: a bookshelf (reading and
-searching), a workbench (editing), a terminal (commands), a globe (web and
-browser), a switchboard (MCP tools) and a coffee machine. Hover one to see how
-much of that work the session did.
+Each room is furnished with what the session did: a bookshelf (reading and
+searching), a workbench (editing), a terminal rack (commands), a globe (web
+and browser), a switchboard (MCP tools), and always the workbench and coffee
+machine. Hover one to see how much of that work the session did. Drag to look
+around; click the EXIT door (or press Escape) to go back outside.
 
 The session's agent is the robot:
 
 - **Working:** it walks to the station for what it's doing right now, with
   its latest action in a speech bubble
-- **Waiting for you:** it stands in the middle holding up a sign
+- **Waiting for you:** it stands in the middle waving at you
 - **Idle:** it's at the coffee machine
 - **Closed:** it's asleep
 
@@ -71,7 +93,7 @@ the latest actions, the full story and the command to resume the session.
 
 ## Share your city
 
-**Share your city** makes a postcard of your city with your stats on it.
+**Share** makes a postcard from a snapshot of your 3D city, with your stats on it.
 Project names are hidden unless you turn them on. Download it, copy it, or
 post it to X or LinkedIn. The image is made on your machine and only goes
 where you put it.
@@ -121,4 +143,10 @@ claude --plugin-dir .       # try the plugin without installing it
 claude plugin validate .
 ```
 
-No dependencies; requires Node 18+.
+No npm dependencies; requires Node 18+. [Three.js](https://threejs.org) (MIT) is
+vendored in `public/three.js` and `public/three-core.js` so the page never loads
+anything from the internet. Open the page with `?debug` to get `window.sc`
+(the city, game state and app state) in devtools.
+
+Branches: `main` is released, `develop` is integration, and every change goes
+on its own branch with a PR into `develop`.
