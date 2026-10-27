@@ -2,7 +2,7 @@ import * as THREE from './three.js';
 import { City } from './city3d.js';
 import { Room } from './room3d.js';
 import { buildLayout, colonyOf, COLONIES } from './layout.js';
-import { KINDS, STATUS, CAR_MODELS, carById, makeCar } from './models.js';
+import { KINDS, STATUS, CAR_MODELS, carById, makeCar, dispose } from './models.js';
 import { createGame, pending, collect, levelOf, quests, progress, claim, visited, actionsOf } from './game.js';
 import { sfx } from './sfx.js';
 import { renderPostcard, cityStats, openShare } from './share.js';
@@ -20,7 +20,7 @@ const state = {
   room: null,
   roomSession: null,
   activity: [],
-  sky: store.get('sc.sky') || 'auto',
+  sky: 'auto', // follows the local clock on every load; the button overrides it until reload
   car: carById(store.get('sc.car')),
   seen: new Set(store.json('sc.seen', [])),
   loaded: false,
@@ -46,6 +46,7 @@ const city = new City(canvas, {
   arrive(rec) {
     sfx.honk();
     city.bounce(rec);
+    city.focus(rec, 26);
     if (state.enterOnArrive === rec.s.id) { state.enterOnArrive = null; enter(rec); }
     else if (city.selected === rec) renderCard();
   },
@@ -320,6 +321,7 @@ function leave() {
   transition(() => {
     state.scene = 'city';
     city.active = true;
+    dispose(state.room.scene);
     state.room = null;
     hud.hidden = true;
     bubble.hidden = true;
@@ -449,7 +451,9 @@ function frame(t) {
   if (state.scene === 'room' && state.room) {
     const s = state.roomSession;
     state.room.update(dt, t, s, n);
-    city.renderer.render(state.room.scene, state.room.camera);
+    const u = city.post.uniforms;
+    u.uBlur.value = 0.45; u.uBand.value = 0.3; u.uFocus.value = 0.5;
+    city.post.render(state.room.scene, state.room.camera);
     const p = state.room.headPosition().project(state.room.camera);
     const r = canvas.getBoundingClientRect();
     bubble.style.left = (p.x + 1) / 2 * r.width + 'px';
@@ -528,7 +532,6 @@ $('rot-l').onclick = () => { sfx.whoosh(); city.rotate(-1); };
 $('rot-r').onclick = () => { sfx.whoosh(); city.rotate(1); };
 $('sky').onclick = () => {
   state.sky = { auto: 'day', day: 'night', night: 'auto' }[state.sky];
-  store.set('sc.sky', state.sky);
   renderSkyButton();
 };
 $('me').onclick = openPicker;

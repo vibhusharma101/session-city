@@ -27,8 +27,12 @@ npx github:vibhusharma101/session-city
 
 Session City is a little 3D city-builder made of your real sessions.
 
-- **Move around:** drag to pan, scroll to zoom, right-drag or Q/E to rotate,
-  WASD or the arrow keys to pan. ⤢ shows the whole city.
+- **Move around:** drag to pan, scroll to zoom, right-drag or Q/E to turn the
+  city a quarter at a time, WASD or the arrow keys to pan. ⤢ shows the whole
+  city. The camera looks down on the map when you zoom out and tilts towards
+  the buildings as you zoom in.
+- **Day and night:** the sky follows your local clock: lit windows and street
+  lamps at night, long sunny shadows by day. ◐ pins day or night until you reload.
 - **Your car:** the only car in town is yours. Click a building and it
   drives over; click a street to just drive there. More cars unlock as you
   level up.

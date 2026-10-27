@@ -28,10 +28,12 @@ export const TILE = 2;    // world units per tile
 export const FLOOR = 0.55; // world units per storey
 
 // ---------- materials & primitives ----------
+// Shared materials all use vertex colours, so every geometry drawn with mat()
+// must carry a colour attribute: see ao() below.
 const mats = new Map();
 export function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
-  if (!mats.has(key)) mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, flatShading: true, ...opts }));
+  if (!mats.has(key)) mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, flatShading: true, vertexColors: true, ...opts }));
   return mats.get(key);
 }
 const glow = new Map();
@@ -40,25 +42,49 @@ export function glowMat(color) {
   return glow.get(color);
 }
 
+// Baked "ambient occlusion": vertices darken towards the bottom of the shape,
+// so walls get contact shading where they meet the ground and tree crowns
+// shade underneath, without any extra render pass.
+export function ao(geo, dark = 0.7) {
+  geo.computeBoundingBox();
+  const { min, max } = geo.boundingBox;
+  const pos = geo.attributes.position, span = Math.max(1e-6, max.y - min.y);
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = (pos.getY(i) - min.y) / span;
+    colors.fill(dark + (1 - dark) * Math.pow(t, 0.55), i * 3, i * 3 + 3);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
 export const GEO = {
-  box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10),
-  cyl6: new THREE.CylinderGeometry(0.5, 0.5, 1, 6),
-  sphere: new THREE.IcosahedronGeometry(0.5, 1),
-  blob: new THREE.IcosahedronGeometry(0.5, 0),
-  cone4: new THREE.ConeGeometry(0.5, 1, 4),
-  cone6: new THREE.ConeGeometry(0.5, 1, 6),
-  cone8: new THREE.ConeGeometry(0.5, 1, 8),
-  dome: new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-  ring: new THREE.RingGeometry(0.85, 1, 40),
+  box: ao(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), // boxes sit on y = 0
+  cyl: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 10).translate(0, 0.5, 0)),
+  cyl6: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 6).translate(0, 0.5, 0)),
+  sphere: ao(new THREE.IcosahedronGeometry(0.5, 1), 0.8),
+  blob: ao(new THREE.IcosahedronGeometry(0.5, 0), 0.62),
+  cone4: ao(new THREE.ConeGeometry(0.5, 1, 4).translate(0, 0.5, 0), 0.8),
+  cone6: ao(new THREE.ConeGeometry(0.5, 1, 6).translate(0, 0.5, 0), 0.62),
+  cone8: ao(new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0), 0.75),
+  dome: ao(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0.85),
+  ring: new THREE.RingGeometry(0.85, 1, 40).rotateX(-Math.PI / 2),
 };
-GEO.box.translate(0, 0.5, 0); // boxes sit on y = 0
-GEO.cyl.translate(0, 0.5, 0);
-GEO.cyl6.translate(0, 0.5, 0);
-GEO.cone4.translate(0, 0.5, 0);
-GEO.cone6.translate(0, 0.5, 0);
-GEO.cone8.translate(0, 0.5, 0);
-GEO.ring.rotateX(-Math.PI / 2);
+const SHARED_GEO = new Set(Object.values(GEO));
+
+// Frees what a subtree created for itself; shared geometry and cached materials stay.
+export function dispose(root) {
+  const cached = new Set([...mats.values(), ...glow.values()]);
+  root.traverse((o) => {
+    if (o.geometry && !o.isSprite && !SHARED_GEO.has(o.geometry)) o.geometry.dispose(); // sprites share one geometry
+    for (const m of [o.material].flat()) {
+      if (!m || cached.has(m)) continue;
+      m.map?.dispose();
+      m.dispose();
+    }
+    if (o.isInstancedMesh) o.dispose();
+  });
+}
 
 export function part(geo, material, [w, h, d], [x = 0, y = 0, z = 0] = [], shadow = true) {
   const m = new THREE.Mesh(geo, material);
@@ -99,6 +125,11 @@ export function makeBuilding(s, colony) {
   const body = cube(color, [W, H, W], [0, base, 0]);
   g.add(body);
   for (let f = 1; f < floors; f++) g.add(cube(shade(color, -0.12), [W + 0.03, 0.04, W + 0.03], [0, base + f * FLOOR + 0.1, 0]));
+  // a darker skirting and lighter corner trims give the block a readable silhouette
+  g.add(cube(shade(color, -0.25), [W + 0.04, 0.1, W + 0.04], [0, base, 0]));
+  for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    g.add(cube(shade(color, old ? -0.1 : 0.2), [0.09, H, 0.09], [cx * W / 2, base, cz * W / 2]));
+  }
 
   // roof cap; old roofs sag a little
   const roofY = base + H;
@@ -141,6 +172,17 @@ export function makeBuilding(s, colony) {
   }
 
   roof(g, s, out, roofY + 0.09, color, old, r);
+  // rooftop clutter on flat roofs: an AC unit, and a water tank on taller blocks
+  if (!['research', 'chat', 'mcp', 'web'].includes(s.kind)) {
+    const top = roofY + 0.09;
+    g.add(cube(old ? '#8d8a84' : '#c9ced8', [0.34, 0.2, 0.26], [-0.4, top, 0.38]));
+    g.add(cube('#59606e', [0.2, 0.02, 0.2], [-0.4, top + 0.2, 0.38]));
+    if (floors >= 5 && s.kind !== 'agents') { // the HQ antenna stands where the tank would
+      for (const [lx, lz] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]]) g.add(cube('#6b5a4c', [0.04, 0.22, 0.04], [-0.35 + lx, top, -0.35 + lz]));
+      g.add(part(GEO.cyl, mat(old ? '#7d6a58' : '#a9805c'), [0.4, 0.34, 0.4], [-0.35, top + 0.22, -0.35]));
+      g.add(part(GEO.cone8, mat('#6b5a4c'), [0.44, 0.12, 0.44], [-0.35, top + 0.56, -0.35]));
+    }
+  }
   return out;
 }
 
@@ -159,7 +201,7 @@ function roof(g, s, out, y, color, old, r) {
       break;
     }
     case 'research': { // pitched slate roof
-      const p = part(GEO.cone4, mat(old ? '#6f7680' : '#5f7ea6'), [1.9, 0.75, 1.9], [0, y, 0]);
+      const p = part(GEO.cone4, mat(old ? '#6f7680' : '#5f7ea6'), [2.3, 0.8, 2.3], [0, y, 0]);
       p.rotation.y = Math.PI / 4;
       g.add(p);
       break;
@@ -258,7 +300,7 @@ export function makeCar(model) {
 // ---------- robots (the agents inside buildings) ----------
 export function makeRobot(color, scale = 1) {
   const g = new THREE.Group();
-  const body = part(new THREE.CapsuleGeometry(0.17, 0.2, 4, 10), mat(color, { flatShading: false, roughness: 0.5 }), [1, 1, 1], [0, 0.36, 0]);
+  const body = part(ao(new THREE.CapsuleGeometry(0.17, 0.2, 4, 10), 0.8), mat(color, { flatShading: false, roughness: 0.5 }), [1, 1, 1], [0, 0.36, 0]);
   const head = new THREE.Group();
   head.position.set(0, 0.72, 0);
   head.add(part(GEO.box, mat('#eef1f6', { flatShading: false, roughness: 0.4 }), [0.36, 0.26, 0.3], [0, 0, 0]));
@@ -270,7 +312,7 @@ export function makeRobot(color, scale = 1) {
   const arms = [-0.24, 0.24].map((x) => {
     const pivot = new THREE.Group();
     pivot.position.set(x, 0.5, 0);
-    pivot.add(part(new THREE.CapsuleGeometry(0.045, 0.16, 3, 6), mat(shade(color, -0.15)), [1, 1, 1], [0, -0.12, 0]));
+    pivot.add(part(ao(new THREE.CapsuleGeometry(0.045, 0.16, 3, 6), 0.8), mat(shade(color, -0.15)), [1, 1, 1], [0, -0.12, 0]));
     g.add(pivot);
     return pivot;
   });
@@ -283,9 +325,9 @@ export function makeRobot(color, scale = 1) {
 // ---------- coins, signs, labels ----------
 export function makeCoin() {
   const g = new THREE.Group();
-  const face = part(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 28), mat('#ffd34d', { metalness: 0.15, roughness: 0.35, emissive: '#b07a00', emissiveIntensity: 0.55, flatShading: false }), [1, 1, 1], [0, 0, 0]);
+  const face = part(ao(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 28), 1), mat('#ffd34d', { metalness: 0.15, roughness: 0.35, emissive: '#b07a00', emissiveIntensity: 0.55, flatShading: false }), [1, 1, 1], [0, 0, 0]);
   face.rotation.x = Math.PI / 2;
-  const rim = part(new THREE.TorusGeometry(0.34, 0.04, 6, 28), mat('#e8a820', { metalness: 0.15, roughness: 0.4, emissive: '#7a5200', emissiveIntensity: 0.4 }), [1, 1, 1], [0, 0, 0]);
+  const rim = part(ao(new THREE.TorusGeometry(0.34, 0.04, 6, 28), 1), mat('#e8a820', { metalness: 0.15, roughness: 0.4, emissive: '#7a5200', emissiveIntensity: 0.4 }), [1, 1, 1], [0, 0, 0]);
   const star = part(GEO.cone4, mat('#fff1b0', { emissive: '#a07400', emissiveIntensity: 0.4 }), [0.22, 0.05, 0.22], [0, 0, 0.045]);
   star.rotation.x = Math.PI / 2;
   g.add(face, rim, star);

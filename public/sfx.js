@@ -3,9 +3,12 @@ import { store } from './util.js';
 
 let ac = null;
 let muted = store.get('sc.muted') === '1';
+// Browsers only allow audio after the person interacts with the page.
+let unlocked = false;
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { unlocked = true; }, { once: true, capture: true });
 
 function ctx() {
-  if (muted) return null;
+  if (muted || !unlocked) return null;
   try {
     ac ??= new AudioContext();
     if (ac.state === 'suspended') ac.resume();

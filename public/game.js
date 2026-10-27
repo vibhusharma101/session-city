@@ -52,9 +52,12 @@ const QUESTS = {
 export function quests(g, sessions) {
   if (g.quests?.day !== today()) {
     const pick = ['collect', 'visit', 'drive'];
-    if (sessions.some((s) => s.status === 'waiting')) pick.push('needs');
-    else if (sessions.some((s) => s.status !== 'closed')) pick.push('live');
-    else pick.push('story');
+    // a session that needs you always wins; otherwise rotate the fourth quest by day
+    const extra = ['story'];
+    if (sessions.some((s) => s.status !== 'closed')) extra.push('live');
+    if (sessions.some((s) => Date.now() - Date.parse(s.lastActivity) >= 7 * 864e5)) extra.push('oldtown');
+    const dayNumber = Math.floor(Date.now() / 864e5);
+    pick.push(sessions.some((s) => s.status === 'waiting') ? 'needs' : extra[dayNumber % extra.length]);
     g.quests = { day: today(), list: pick.map((id) => ({ id, have: 0, claimed: false })) };
     save(g);
   }
@@ -90,4 +93,3 @@ export function visited(g, s, colony) {
   return done;
 }
 
-export const saveGame = save;
