@@ -1,0 +1,14 @@
+{
+  "name": "session-city",
+  "description": "Session City: your Claude Code sessions as a living city.",
+  "owner": {
+    "name": "Vibhu Sharma"
+  },
+  "plugins": [
+    {
+      "name": "session-city",
+      "description": "See your Claude Code sessions as a living city in your browser. Runs locally; nothing leaves your machine.",
+      "source": "./"
+    }
+  ]
+}

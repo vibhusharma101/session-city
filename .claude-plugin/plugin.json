@@ -1,0 +1,16 @@
+{
+  "name": "session-city",
+  "version": "0.1.0",
+  "description": "See your Claude Code sessions as a living city in your browser. Runs locally; nothing leaves your machine.",
+  "author": {
+    "name": "Vibhu Sharma"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sessions",
+    "visualization",
+    "dashboard"
+  ],
+  "repository": "https://github.com/vibhusharma101/session-city",
+  "homepage": "https://github.com/vibhusharma101/session-city"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "session-city",
+  "version": "0.1.0",
+  "description": "See your Claude Code sessions as a living city. Runs locally; nothing leaves your machine.",
+  "type": "module",
+  "bin": {
+    "session-city": "bin/session-city.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public"
+  ],
+  "scripts": {
+    "start": "node bin/session-city.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vibhusharma101/session-city.git"
+  },
+  "homepage": "https://github.com/vibhusharma101/session-city"
+}
