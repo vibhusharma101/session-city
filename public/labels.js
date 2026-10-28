@@ -175,7 +175,7 @@ export class Labels {
     if (!st?.need) { el.classList.remove('on'); return; }
     const v = this.city.labelAnchor(it.rec, this.v.clone()).project(this.city.camera);
     const behind = v.z > 1;
-    let nx = behind ? -v.x : v.x, ny = behind ? -v.y : v.y;
+    const nx = behind ? -v.x : v.x, ny = behind ? -v.y : v.y;
     const W = innerWidth, H = innerHeight;
     const on = !behind && nx > -1 && nx < 1 && ny > -1 && ny < 1;
     if (on) { el.classList.remove('on'); return; }
