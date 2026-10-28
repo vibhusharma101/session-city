@@ -1,6 +1,6 @@
 {
   "name": "session-city",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "See your Claude Code sessions as a living city. Runs locally; nothing leaves your machine.",
   "type": "module",
   "bin": {
