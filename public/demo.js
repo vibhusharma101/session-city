@@ -25,6 +25,27 @@ const SESSIONS = [
   ['cli-tool', 'What does this regex do?', 'chat', 'closed', 1000, 2, 0],
 ];
 
+// ?demo=busy adds these too: a heavy day, to see how the city copes with many live sessions
+const BUSY = [
+  ['api-server', 'Split the orders service', 'agents', 'working', 0.01, 210, 4],
+  ['api-server', 'Trace slow checkout queries', 'research', 'working', 0.03, 64, 0],
+  ['api-server', 'Bump Node to 22', 'shell', 'waiting', 0.1, 28, 0],
+  ['mobile-app', 'Offline sync for drafts', 'build', 'working', 0.04, 180, 2],
+  ['mobile-app', 'Push notification permissions', 'web', 'waiting', 0.3, 40, 0],
+  ['mobile-app', 'Release notes for 4.2', 'chat', 'open', 1, 6, 0],
+  ['docs-site', 'Search with Algolia', 'mcp', 'working', 0.02, 58, 0],
+  ['docs-site', 'API reference generator', 'build', 'open', 2, 120, 1],
+  ['data-pipeline', 'Kafka consumer lag', 'shell', 'working', 0.01, 90, 0],
+  ['data-pipeline', 'Dedupe user events', 'build', 'waiting', 0.5, 77, 0],
+  ['web-dashboard', 'Charts for revenue page', 'build', 'working', 0.02, 130, 1],
+  ['web-dashboard', 'Accessibility pass', 'web', 'open', 4, 45, 0],
+  ['web-dashboard', 'Table virtualisation', 'build', 'closed', 26, 70, 0],
+  ['web-dashboard', 'Why is the bundle 2MB?', 'research', 'closed', 90, 38, 0],
+  ['infra', 'Terraform for staging', 'shell', 'working', 0.05, 150, 0],
+  ['infra', 'Rotate the TLS certs', 'shell', 'closed', 140, 25, 0],
+  ['infra', 'Cost report for October', 'mcp', 'closed', 300, 33, 0],
+];
+
 const GROUP_TOOLS = {
   build: ['Edit', 'Write'], research: ['Read', 'Grep'], shell: ['Bash'], web: ['WebFetch', 'WebSearch'],
   agents: ['Agent'], mcp: ['mcp__linear__create_issue'], chat: [],
@@ -32,12 +53,12 @@ const GROUP_TOOLS = {
 
 let cache = null;
 
-export function demoCity() {
+export function demoCity(busy = false) {
   if (cache) return cache;
   const r = rng(42);
   const now = Date.now();
   const districts = new Map();
-  SESSIONS.forEach(([project, title, kind, status, hours, turns, subagents], i) => {
+  (busy ? [...SESSIONS, ...BUSY] : SESSIONS).forEach(([project, title, kind, status, hours, turns, subagents], i) => {
     const tools = {}, groups = {};
     const total = kind === 'chat' ? 1 : Math.round(turns * (1.6 + r()));
     // mostly the session's own kind of work, with some reading and shell on the side

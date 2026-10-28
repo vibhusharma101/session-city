@@ -8,9 +8,11 @@ import { sfx } from './sfx.js';
 import { renderPostcard, cityStats, openShare } from './share.js';
 import { esc, fmtNum, ago, span, store } from './util.js';
 import { demoCity, demoActivity } from './demo.js';
+import { Labels } from './labels.js';
 
 // ?demo shows a made-up city instead of this machine's sessions.
 const DEMO = new URLSearchParams(location.search).has('demo');
+const BUSY = new URLSearchParams(location.search).get('demo') === 'busy';
 if (DEMO) store.ns = 'demo:';
 
 const $ = (id) => document.getElementById(id);
@@ -59,6 +61,7 @@ const city = new City(canvas, {
   ground() { sfx.click(); closeCard(); },
 });
 city.active = true;
+const labels = new Labels($('labels'), city, { select: (rec) => selectBuilding(rec), coins: (rec) => Math.max(0, rec.pending) });
 if (new URLSearchParams(location.search).has('debug')) window.sc = { city, game, state }; // for poking at it from devtools
 
 // ---------- data ----------
@@ -81,6 +84,7 @@ function rebuild() {
     for (const s of fresh) { toast(`🏗️ New building: ${s.title || 'a new session'}`); sfx.build(); }
     for (const d of ds) for (const s of d.list) state.seen.add(s.id);
     store.setJson('sc.seen', [...state.seen]);
+    labels.build();
   } else {
     for (const rec of city.recs.values()) rec.s = rec.b.s = findSession(rec.s.id) ?? rec.s;
   }
@@ -90,7 +94,7 @@ function rebuild() {
 
 async function load() {
   try {
-    const data = DEMO ? demoCity() : await (await fetch('/api/city', { cache: 'no-store' })).json();
+    const data = DEMO ? demoCity(BUSY) : await (await fetch('/api/city', { cache: 'no-store' })).json();
     if (data.error) throw new Error(data.error);
     state.data = data;
   } catch (e) {
@@ -313,6 +317,7 @@ function enter(rec) {
     card.hidden = true;
     $('quests').hidden = true;
     document.body.classList.add('in-room');
+    labels.setVisible(false);
     renderHud();
     hud.hidden = false;
     bubble.hidden = false;
@@ -331,6 +336,7 @@ function leave() {
     bubble.hidden = true;
     tip.hidden = true;
     document.body.classList.remove('in-room');
+    labels.setVisible(true);
     if (city.selected) renderCard();
   });
 }
@@ -469,6 +475,7 @@ function frame(t) {
     city.setNight(n);
     city.update(dt, t);
     city.render();
+    labels.update();
   }
   requestAnimationFrame(frame);
 }
@@ -544,9 +551,12 @@ $('picker').onclick = (e) => { if (e.target === $('picker')) closePicker(); };
 $('mute').onclick = () => { $('mute').textContent = sfx.toggle() ? '🔇' : '🔊'; sfx.click(); };
 $('mute').textContent = sfx.muted ? '🔇' : '🔊';
 $('quests-btn').onclick = () => { sfx.click(); $('quests').hidden = !$('quests').hidden; if (!$('quests').hidden) renderQuests(); };
-$('needs').onclick = () => {
-  const rec = [...city.recs.values()].find((r) => r.s.status === 'waiting');
-  if (!rec) return;
+let needsAt = -1;
+$('needs').onclick = () => { // each click visits the next session that needs you
+  const list = [...city.recs.values()].filter((r) => r.s.status === 'waiting');
+  if (!list.length) return;
+  needsAt = (needsAt + 1) % list.length;
+  const rec = list[needsAt];
   if (state.scene === 'room') leave();
   city.focus(rec);
   selectBuilding(rec);
@@ -554,14 +564,31 @@ $('needs').onclick = () => {
 $('share-btn').onclick = () => {
   if (!city.recs.size) return;
   openShare($('share'), (showNames) => {
-    const vis = city.labels.map((l) => l.visible);
-    city.labels.forEach((l) => { l.visible = showNames; });
     city.render();
-    const out = renderPostcard(city.renderer.domElement, cityStats(city.L), { night: nightAmount() });
-    city.labels.forEach((l, i) => { l.visible = vis[i]; });
+    const out = renderPostcard(withNames(city.renderer.domElement, showNames ? labels.snapshot() : []), cityStats(city.L), { night: nightAmount() });
     return { canvas: out, stats: cityStats(city.L) };
   });
 };
+
+// The render with the district names that are on screen painted on top
+// (the names live in HTML, so a plain canvas copy would leave them out).
+function withNames(src, names) {
+  if (!names.length) return src;
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d'), k = src.width / src.getBoundingClientRect().width;
+  g.drawImage(src, 0, 0);
+  g.font = `800 ${Math.round(14 * k)}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const n of names) {
+    const w = g.measureText(n.text).width + 20 * k, h = 26 * k, x = n.x * k, y = n.y * k;
+    g.fillStyle = 'rgba(255,250,240,.94)';
+    g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, 9 * k); g.fill();
+    g.fillStyle = '#3b2f22';
+    g.fillText(n.text, x, y + k);
+  }
+  return c;
+}
 
 $('legend').innerHTML = Object.values(KINDS)
   .map((k) => `<div><span class="sw" style="background:${k.color}"></span> ${k.label}</div><div class="muted">${k.desc}</div>`)

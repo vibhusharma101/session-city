@@ -90,9 +90,11 @@ Coins, XP and quests are kept in your browser only.
 |---|---|
 | Building height | how many turns the session ran |
 | Lit windows, a green ripple on the ground | the session is working right now |
-| A bouncing yellow **!** | the session is waiting for you |
-| A gold coin with a number | actions you haven't collected yet |
+| A bouncing yellow **!** tag (or an arrow at the screen edge) | the session is waiting for you; the **needs you** button visits each in turn |
+| A spinning gold coin, and its amount on the tag | actions you haven't collected yet |
 | Drones circling the roof | subagents the session dispatched |
+
+Labels work like a map: colony names from far away, project names as you come closer, and each session's title up close. Labels never stack on top of each other; the less important one steps aside. Click any tag to select its building.
 
 The roof tells you what kind of work the session mostly did:
 
@@ -156,7 +158,7 @@ claude --plugin-dir .       # try the plugin without installing it
 claude plugin validate .
 ```
 
-No npm dependencies; requires Node 18+. [Three.js](https://threejs.org) (MIT) is vendored in `public/three.js` and `public/three-core.js`. Add `?demo` to the URL for sample data, and `?debug` to get `window.sc` (the city, game state and app state) in devtools.
+No npm dependencies; requires Node 18+. [Three.js](https://threejs.org) (MIT) is vendored in `public/three.js` and `public/three-core.js`. Add `?demo` to the URL for sample data (`?demo=busy` for a crowded city with 34 sessions), and `?debug` to get `window.sc` (the city, game state and app state) in devtools.
 
 Contributions are welcome. Branches: `main` is released, `develop` is integration, and every change goes on its own branch with a PR into `develop`.
 
