@@ -1,156 +1,167 @@
 # Session City
 
-Your Claude Code sessions as a living city, with one building per session.
+**Your Claude Code sessions as a little 3D city you can drive around.**
+Every session is a building, every project a block, every action a coin. It runs on your machine and nothing leaves it.
 
-## Install as a Claude Code plugin
+[![Release](https://img.shields.io/github/v/release/vibhusharma101/session-city)](https://github.com/vibhusharma101/session-city/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d97757)
+![Local only](https://img.shields.io/badge/data-stays%20on%20your%20machine-2f9e5b)
 
-Inside Claude Code:
+![Uptown by day: towers for each session, coins waiting above them, a taxi on the avenue](docs/images/uptown-day.jpg)
+
+## Get your city in 30 seconds
+
+You need [Claude Code](https://claude.com/claude-code) and Node 18 or newer.
+
+**As a Claude Code plugin** (recommended). Inside Claude Code, run:
 
 ```
 /plugin marketplace add vibhusharma101/session-city
 /plugin install session-city@session-city
+/session-city:city
 ```
 
-Then type `/session-city:city` in any session. Your city opens in
-the browser at `http://127.0.0.1:4747` with every session found in
-`~/.claude/projects`, and live sessions light up as they work. The server
-runs in the background and stops by itself a few minutes after you close the
-tab. Requires Node 18 or newer.
+Your city opens in the browser at `http://127.0.0.1:4747`. Next time, `/session-city:city` is all you need.
 
-## Or run it from a terminal
+**Or from any terminal:**
 
 ```
 npx github:vibhusharma101/session-city
 ```
 
-## Play
+The server runs in the background and stops by itself a few minutes after you close the tab.
 
-Session City is a little 3D city-builder made of your real sessions.
+## What you'll see
 
-- **Move around:** drag to pan, scroll to zoom, right-drag or Q/E to turn the
-  city a quarter at a time, WASD or the arrow keys to pan. ⤢ shows the whole
-  city. The camera looks down on the map when you zoom out and tilts towards
-  the buildings as you zoom in.
-- **Day and night:** the sky follows your local clock: lit windows and street
-  lamps at night, long sunny shadows by day. ◐ pins day or night until you reload.
-- **Your car:** the only car in town is yours. Click a building and it
-  drives over; click a street to just drive there. More cars unlock as you
-  level up.
-- **Coins:** every action an agent took (an edit, a search, a command) is a
-  coin waiting above its building. Click the coin to collect it.
-- **Levels:** collecting coins and finishing quests earns XP. Each level
-  unlocks a new car.
-- **Quests:** three daily goals, like collecting from three buildings,
-  answering a session that needs you, or exploring Old Town.
-- **Sound:** small synthesized blips for clicks, coins and level-ups. 🔊 mutes them.
+### Three colonies: busy, quiet and abandoned
+
+Sessions move into walled neighbourhoods depending on when you last touched them:
+
+| Colony | Who lives there | Looks like |
+|---|---|---|
+| **Uptown** | live sessions, or anything used in the last 24 hours | hedges, a gold gate, fountains, flower beds |
+| **Midtown** | sessions used this week | white picket fence, tidy streets |
+| **Old Town** | sessions untouched for a week or more | broken fence, dry grass, dead trees, boarded-up windows |
+
+Inside each colony, every project gets its own block.
+
+![The whole city: Uptown, Midtown and Old Town along one avenue](docs/images/colonies.jpg)
+
+### Day and night follow your clock
+
+Open it at night and the windows of live sessions glow and the street lamps come on.
+
+| Day | Night |
+|---|---|
+| ![Uptown by day](docs/images/uptown-day.jpg) | ![Uptown at night with lit windows and street lamps](docs/images/uptown-night.jpg) |
+
+### Click any building
+
+The card shows what the session was about, how busy it was, and the coins waiting for you.
+
+![A building card: title, colony, status, prompts, actions, failures, and Collect / Go inside / Story buttons](docs/images/building-card.jpg)
+
+### Step inside
+
+You stand inside the session's room: floorboards, lamps, a clock with your real time, and a window onto the city that turns to night when you do. The room is furnished with the work the session did. The robot agent walks to whatever it is doing right now, with its latest action in a speech bubble. Subagents work at the desks, and the side panel shows the live activity feed. Drag to look around.
+
+![Inside a building: a robot at the workbench, subagent robots at desks, and the activity feed](docs/images/inside.jpg)
+
+## How to play
+
+| Do this | How |
+|---|---|
+| Look around | drag to pan, scroll to zoom, right-drag or **Q / E** to turn a quarter, **WASD** or arrow keys to pan, **⤢** for the whole city |
+| Visit a session | click its building: your car drives over and the card opens; **Go inside** enters the room |
+| Collect coins | click the coin above a building (one coin for every action an agent took) |
+| Level up | coins and quests give XP; levels 2 to 6 each unlock a new car (🚗 to switch) |
+| Daily quests | **📜 Quests**: three goals a day, like answering a session that needs you or exploring Old Town |
+| Find who needs you | the yellow **❗ needs you** button flies you to a session waiting for your input |
+| Day or night | follows your clock; ◐ pins day or night until you reload |
+| Sound | small synthesized blips; 🔊 mutes them |
+| Leave a building | the EXIT door, **← Back to the city**, or Escape |
 
 Coins, XP and quests are kept in your browser only.
 
 ## Reading the city
 
-Sessions live in three walled colonies, each with a gate onto the avenue:
-
-| Colony | Sessions | Looks like |
-|---|---|---|
-| **Uptown** | live, or used in the last 24 hours | hedges, gold gate, fountains, flower beds |
-| **Midtown** | used this week | white picket fence, tidy streets |
-| **Old Town** | untouched for a week or more | broken fence, dry grass, dead trees, boarded windows |
-
-Inside a colony each project gets its own block.
-
 | You see | It means |
 |---|---|
-| Building height | How many turns the session ran |
-| Lit windows, green ripple on the ground | Session is working right now |
-| Bouncing yellow **!** | Session is waiting for you |
-| Gold coin with a number | Actions you haven't collected yet |
-| Drones circling | Subagents the session dispatched |
+| Building height | how many turns the session ran |
+| Lit windows, a green ripple on the ground | the session is working right now |
+| A bouncing yellow **!** | the session is waiting for you |
+| A gold coin with a number | actions you haven't collected yet |
+| Drones circling the roof | subagents the session dispatched |
 
-Building types come from the session's dominant kind of work:
+The roof tells you what kind of work the session mostly did:
 
-- **Workshop** (crane): editing code
-- **Library** (pitched roof): reading and searching
-- **Factory** (chimney): running commands
-- **Observatory** (dome): web and browser work
-- **HQ** (antenna and dish): dispatching subagents
-- **Exchange** (gold spire): MCP tools
-- **Café** (umbrellas): mostly conversation
+| Building | Roof | Kind of work |
+|---|---|---|
+| **Workshop** | crane | editing code |
+| **Library** | pitched roof | reading and searching |
+| **Factory** | chimney | running commands |
+| **Observatory** | dome | web and browser work |
+| **HQ** | antenna and dish | dispatching subagents |
+| **Exchange** | gold spire | MCP tools |
+| **Café** | umbrellas | mostly conversation |
 
-## Inside a building
+## Read what happened in a session
 
-Each room is furnished with what the session did: a bookshelf (reading and
-searching), a workbench (editing), a terminal rack (commands), a globe (web
-and browser), a switchboard (MCP tools), and always the workbench and coffee
-machine. Hover one to see how much of that work the session did. Drag to look
-around; click the EXIT door (or press Escape) to go back outside.
+**📖 Story** (on the card or inside a building) opens the whole session as a readable page, built on your machine from its transcript:
 
-The session's agent is the robot:
+- every prompt you gave, in order, with Claude's replies
+- each action Claude took (files read and edited, commands run, searches, subagents), with failures in red
+- the list of files changed
 
-- **Working:** it walks to the station for what it's doing right now, with
-  its latest action in a speech bubble
-- **Waiting for you:** it stands in the middle waving at you
-- **Idle:** it's at the coffee machine
-- **Closed:** it's asleep
-
-Subagents work at the desks in the middle. The side panel shows the stats,
-the latest actions, the full story and the command to resume the session.
+Anything that looks like a credential (API keys, tokens, private keys, `password=…`, `user:pass@` URLs) is masked, so the page is safe to screen-share. Masking is pattern-based, so check before sharing anything sensitive.
 
 ## Share your city
 
-**Share** makes a postcard from a snapshot of your 3D city, with your stats on it.
-Project names are hidden unless you turn them on. Download it, copy it, or
-post it to X or LinkedIn. The image is made on your machine and only goes
-where you put it.
-
-## What happened in a session
-
-**Read the full story** (inside any building) opens the session as a story, built on your
-machine from its transcript:
-
-- every prompt you gave, in order, with Claude's replies
-- each action Claude took (files read and edited, commands run, searches,
-  subagents), with failed actions and their errors in red
-- the list of files changed
-
-Anything that looks like a credential (API keys, tokens, private keys,
-`password=…`, `user:pass@` URLs) is masked, so the page is safe to screen-share.
-Masking is pattern-based, so check before sharing anything sensitive.
+**Share** makes a postcard from a snapshot of your city with your stats on it. Project names are hidden unless you turn them on. Download it, copy it, or post it to X or LinkedIn. The image is made on your machine and only goes where you put it. Tag it **#MySessionCity**.
 
 ## Privacy
 
 Session City runs entirely on your machine:
 
-- The server binds to `127.0.0.1` only and makes no outbound requests.
-- The city view uses only an allowlist of metadata (counts, tool names,
-  timestamps, title, cost); `test/scan.test.js` checks that prompt text,
-  tool inputs and tool outputs never reach it.
-- The session story reads the full transcript, but only when you open it, and
-  only on `127.0.0.1`.
-- Nothing is written anywhere; the city is computed fresh from your files.
+- The server binds to `127.0.0.1` only and makes no outbound requests. Three.js is bundled, so the page loads nothing from the internet either.
+- The city uses only an allowlist of metadata (counts, tool names, timestamps, title). `test/scan.test.js` checks that prompt text, tool inputs and tool outputs never reach it.
+- The session story reads the full transcript, but only when you open it, and only on `127.0.0.1`.
+- The server writes nothing. Your coins and quests live in your browser's local storage.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "No sessions in this view" | Run a Claude Code session first, or set the time range to **All time**. Sessions are read from `~/.claude/projects`. |
+| Your Claude Code data lives elsewhere | Set `CLAUDE_CONFIG_DIR` to that folder. |
+| Port 4747 is taken | It moves to the next free port and prints the URL; or pass `--port 5000`. |
+| A blank page | The city needs WebGL2, which any recent Chrome, Edge, Firefox or Safari has. Check that hardware acceleration is on. |
+| Want to see it without your own sessions | Open `http://127.0.0.1:4747/?demo` for a made-up sample city. |
 
 ## Options
 
 ```
 session-city --port 5000    # pick a port (falls back to the next free one)
 session-city --no-open      # don't open the browser
-session-city --detach       # run in the background (what /city uses)
+session-city --detach       # run in the background (what /session-city:city uses)
 ```
-
-Set `CLAUDE_CONFIG_DIR` if your Claude Code data lives somewhere other than `~/.claude`.
 
 ## Development
 
 ```
-npm start
-npm test
+npm start                   # serve your city
+npm test                    # node --test, no dependencies
 claude --plugin-dir .       # try the plugin without installing it
 claude plugin validate .
 ```
 
-No npm dependencies; requires Node 18+. [Three.js](https://threejs.org) (MIT) is
-vendored in `public/three.js` and `public/three-core.js` so the page never loads
-anything from the internet. Open the page with `?debug` to get `window.sc`
-(the city, game state and app state) in devtools.
+No npm dependencies; requires Node 18+. [Three.js](https://threejs.org) (MIT) is vendored in `public/three.js` and `public/three-core.js`. Add `?demo` to the URL for sample data, and `?debug` to get `window.sc` (the city, game state and app state) in devtools.
 
-Branches: `main` is released, `develop` is integration, and every change goes
-on its own branch with a PR into `develop`.
+Contributions are welcome. Branches: `main` is released, `develop` is integration, and every change goes on its own branch with a PR into `develop`.
+
+## License
+
+[MIT](LICENSE). Not affiliated with Anthropic.
+
+If your city made you smile, a ⭐ helps other people find it.

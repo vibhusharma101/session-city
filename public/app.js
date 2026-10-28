@@ -2,11 +2,16 @@ import * as THREE from './three.js';
 import { City } from './city3d.js';
 import { Room } from './room3d.js';
 import { buildLayout, colonyOf, COLONIES } from './layout.js';
-import { KINDS, STATUS, CAR_MODELS, carById, makeCar, dispose } from './models.js';
+import { KINDS, STATUS, CAR_MODELS, carById, makeCar } from './models.js';
 import { createGame, pending, collect, levelOf, quests, progress, claim, visited, actionsOf } from './game.js';
 import { sfx } from './sfx.js';
 import { renderPostcard, cityStats, openShare } from './share.js';
 import { esc, fmtNum, ago, span, store } from './util.js';
+import { demoCity, demoActivity } from './demo.js';
+
+// ?demo shows a made-up city instead of this machine's sessions.
+const DEMO = new URLSearchParams(location.search).has('demo');
+if (DEMO) store.ns = 'demo:';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('city'), tip = $('tip'), hud = $('hud'), card = $('card'), bubble = $('bubble');
@@ -85,8 +90,7 @@ function rebuild() {
 
 async function load() {
   try {
-    const res = await fetch('/api/city', { cache: 'no-store' });
-    const data = await res.json();
+    const data = DEMO ? demoCity() : await (await fetch('/api/city', { cache: 'no-store' })).json();
     if (data.error) throw new Error(data.error);
     state.data = data;
   } catch (e) {
@@ -105,15 +109,15 @@ async function load() {
     state.loaded = true;
     $('loading').style.opacity = 0;
     setTimeout(() => $('loading').remove(), 500);
-    if (!store.get('sc.car')) setTimeout(openPicker, 1400);
+    if (!store.get('sc.car') && !DEMO) setTimeout(openPicker, 1400);
   }
 }
 
 async function loadActivity() {
   if (state.scene !== 'room') return;
   try {
-    const res = await fetch(`/api/session/${encodeURIComponent(state.roomSession.id)}/activity`, { cache: 'no-store' });
-    const data = await res.json();
+    const data = DEMO ? { actions: demoActivity(state.roomSession) }
+      : await (await fetch(`/api/session/${encodeURIComponent(state.roomSession.id)}/activity`, { cache: 'no-store' })).json();
     state.activity = data.actions ?? [];
     renderFeed();
   } catch { /* keep the last feed */ }
@@ -186,7 +190,7 @@ function renderCard() {
     <div class="actions">
       ${p ? `<button class="btn-gold" id="card-collect">🪙 Collect ${fmtNum(p)}</button>` : ''}
       <button class="btn-go" id="card-enter">${here ? '🚪 Go inside' : state.enterOnArrive === s.id ? '🚗 Driving…' : '🚗 Drive & go in'}</button>
-      <a class="btn" id="card-story" href="/session/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">📖 Story</a>
+      ${DEMO ? '' : `<a class="btn" id="card-story" href="/session/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">📖 Story</a>`}
     </div>`;
   card.hidden = false;
   $('card-x').onclick = closeCard;
@@ -198,7 +202,7 @@ function renderCard() {
     city.driveTo(rec);
     renderCard();
   };
-  $('card-story').onclick = () => questsDone(progress(game, 'story', 1));
+  $('card-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
 }
 
 function closeCard() {
@@ -321,7 +325,7 @@ function leave() {
   transition(() => {
     state.scene = 'city';
     city.active = true;
-    dispose(state.room.scene);
+    state.room.dispose();
     state.room = null;
     hud.hidden = true;
     bubble.hidden = true;
@@ -353,7 +357,7 @@ function renderHud() {
     </div>
     <h3>${s.status === 'working' ? 'Happening now' : 'Last actions'}</h3>
     <ol class="feed" id="feed"></ol>
-    <a class="btn btn-accent cta" id="hud-story" href="/session/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">📖 Read the full story</a>
+    ${DEMO ? '' : `<a class="btn btn-accent cta" id="hud-story" href="/session/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">📖 Read the full story</a>`}
     <details class="more">
       <summary>More</summary>
       <p class="muted">${s.subagents} subagents · ${fmtNum(s.outputTokens)} output tokens${model ? ' · ' + esc(model) : ''}</p>
@@ -361,7 +365,7 @@ function renderHud() {
       <button id="copy">Copy resume command</button>
     </details>`;
   $('leave').onclick = leave;
-  $('hud-story').onclick = () => questsDone(progress(game, 'story', 1));
+  $('hud-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
   $('copy').onclick = (e) => navigator.clipboard?.writeText(resume).then(() => { e.target.textContent = 'Copied'; });
   renderFeed();
 }
@@ -452,7 +456,7 @@ function frame(t) {
     const s = state.roomSession;
     state.room.update(dt, t, s, n);
     const u = city.post.uniforms;
-    u.uBlur.value = 0.45; u.uBand.value = 0.3; u.uFocus.value = 0.5;
+    u.uBlur.value = 0.18; u.uBand.value = 0.36; u.uFocus.value = 0.45; // you are in the room, not looking at a model
     city.post.render(state.room.scene, state.room.camera);
     const p = state.room.headPosition().project(state.room.camera);
     const r = canvas.getBoundingClientRect();
