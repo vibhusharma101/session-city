@@ -63,9 +63,11 @@ export function span(a, b) {
 }
 
 // localStorage can throw (private mode, blocked storage); treat it as optional.
+// `ns` keeps the ?demo city's progress apart from your real one.
 export const store = {
-  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
-  set(key, v) { try { localStorage.setItem(key, v); } catch { /* not persisted */ } },
-  json(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
-  setJson(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* not persisted */ } },
+  ns: '',
+  get(key) { try { return localStorage.getItem(this.ns + key); } catch { return null; } },
+  set(key, v) { try { localStorage.setItem(this.ns + key, v); } catch { /* not persisted */ } },
+  json(key, fallback) { try { return JSON.parse(localStorage.getItem(this.ns + key)) ?? fallback; } catch { return fallback; } },
+  setJson(key, v) { try { localStorage.setItem(this.ns + key, JSON.stringify(v)); } catch { /* not persisted */ } },
 };
