@@ -103,7 +103,7 @@ const wobble = (x, y, z) => Math.sin(x * 7.1 + y * 3.3) * Math.cos(z * 6.3 - x *
 function crown() {
   const lumps = [[0, 0, 0, 0.5], [0.24, -0.08, 0.1, 0.34], [-0.22, -0.06, -0.12, 0.36], [0.04, 0.22, -0.06, 0.34], [-0.06, -0.1, 0.26, 0.3]];
   return ao(merge(lumps.map(([x, y, z, r]) => {
-    const g = new THREE.SphereGeometry(r, 14, 10);
+    const g = new THREE.SphereGeometry(r, 9, 7); // trees are many; keep each light
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
@@ -125,6 +125,7 @@ export const GEO = {
   cyl: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 24).translate(0, 0.5, 0)),
   cyl6: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 12).translate(0, 0.5, 0)),
   sphere: ao(new THREE.SphereGeometry(0.5, 20, 14), 0.8),
+  dot: ao(new THREE.IcosahedronGeometry(0.5, 1), 0.9), // for small, numerous things: flowers, particles, bulbs
   blob: ao(new THREE.IcosahedronGeometry(0.5, 3), 0.62),
   crown: crown(),
   pine: pine(),
@@ -496,7 +497,7 @@ export function makeFountain() {
   g.add(part(GEO.sphere, mat('#e7c45d', { metalness: 0.6, roughness: 0.3 }), [0.16, 0.16, 0.16], [0, 1.02, 0]));
   const drops = [];
   for (let i = 0; i < 8; i++) {
-    const d = part(GEO.sphere, new THREE.MeshBasicMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.85 }), [0.07, 0.07, 0.07], [0, 0, 0], false);
+    const d = part(GEO.dot, new THREE.MeshBasicMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.85 }), [0.07, 0.07, 0.07], [0, 0, 0], false);
     g.add(d);
     drops.push({ mesh: d, a: (i / 8) * Math.PI * 2, phase: i / 8 });
   }

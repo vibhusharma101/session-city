@@ -319,7 +319,7 @@ export class City {
       for (let i = 0; i < 4; i++) {
         const d = new THREE.Group();
         d.add(part(GEO.box, mat('#5b5f73'), [0.34, 0.05, 0.08], [0, 0, 0]));
-        d.add(part(GEO.sphere, glowMat('#b9a3e3'), [0.1, 0.1, 0.1], [0, -0.05, 0], false));
+        d.add(part(GEO.dot, glowMat('#b9a3e3'), [0.1, 0.1, 0.1], [0, -0.05, 0], false));
         d.visible = false;
         city.add(d);
         rec.drones.push(d);
@@ -430,7 +430,7 @@ export class City {
         (blk.colony === 'oldtown' ? weeds : flowers).push([x, y, r()]);
       }
     }
-    const fl = new THREE.InstancedMesh(GEO.sphere, mat('#ffffff', { roughness: 0.6 }), Math.max(1, flowers.length));
+    const fl = new THREE.InstancedMesh(GEO.dot, mat('#ffffff', { roughness: 0.6 }), Math.max(1, flowers.length));
     const palette = ['#ffffff', '#ffd166', '#ef798a', '#c3a6ff', '#ff9f68'];
     flowers.forEach(([x, y, k], i) => {
       dummy.position.copy(this.toWorld(x, y, PARK_TOP + 0.04));
@@ -542,7 +542,7 @@ export class City {
     const dummy = new THREE.Object3D();
     const posts = new THREE.InstancedMesh(GEO.cyl6, mat('#4a5160'), L.lamps.length);
     const lit = L.lamps.filter((l) => l.colony !== 'oldtown' || hash(`${l.x},${l.y}`) % 3 === 0);
-    this.bulbs = new THREE.InstancedMesh(GEO.sphere, glowMat('#ffffff'), Math.max(1, lit.length));
+    this.bulbs = new THREE.InstancedMesh(GEO.dot, glowMat('#ffffff'), Math.max(1, lit.length));
     this.bulbs.material = new THREE.MeshBasicMaterial({ color: '#dfe3ea', toneMapped: false });
     posts.castShadow = true;
     L.lamps.forEach((l, i) => {
@@ -902,7 +902,7 @@ export class City {
     this.tweens.add(0.6, (k) => { ring.scale.setScalar(0.3 + k * 0.9); ring.material.opacity = 1 - k; }, undefined, () => { this.scene.remove(ring); ring.material.dispose(); });
   }
 
-  particle(pos, { color, size = 0.2, life = 1, v = new THREE.Vector3(), g = 0, grow = 0, spin = false, geo = GEO.sphere, opacity = 1 }) {
+  particle(pos, { color, size = 0.2, life = 1, v = new THREE.Vector3(), g = 0, grow = 0, spin = false, geo = GEO.dot, opacity = 1 }) {
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
     m.position.copy(pos);
     m.scale.setScalar(size);

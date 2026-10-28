@@ -551,12 +551,12 @@ $('picker').onclick = (e) => { if (e.target === $('picker')) closePicker(); };
 $('mute').onclick = () => { $('mute').textContent = sfx.toggle() ? '🔇' : '🔊'; sfx.click(); };
 $('mute').textContent = sfx.muted ? '🔇' : '🔊';
 $('quests-btn').onclick = () => { sfx.click(); $('quests').hidden = !$('quests').hidden; if (!$('quests').hidden) renderQuests(); };
-let needsAt = -1;
+let needsLast = null;
 $('needs').onclick = () => { // each click visits the next session that needs you
   const list = [...city.recs.values()].filter((r) => r.s.status === 'waiting');
   if (!list.length) return;
-  needsAt = (needsAt + 1) % list.length;
-  const rec = list[needsAt];
+  const rec = list[(list.findIndex((r) => r.s.id === needsLast) + 1) % list.length];
+  needsLast = rec.s.id;
   if (state.scene === 'room') leave();
   city.focus(rec);
   selectBuilding(rec);
