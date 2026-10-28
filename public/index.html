@@ -161,6 +161,47 @@
   #empty { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; z-index: 4; }
   #empty > div { padding: 24px; max-width: 420px; pointer-events: auto; }
 
+  /* map labels over the city (see labels.js): placed by script, faded in and out */
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+  .lb { position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s ease; will-change: transform; }
+  .lb > * { pointer-events: none; }
+  .lb.on { opacity: 1; pointer-events: auto; cursor: pointer; }
+  .lb-colony { cursor: default !important; pointer-events: none !important; translate: -50% -50%; text-align: center; color: #fff; font-weight: 900; font-size: 26px;
+    letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(30, 40, 20, .35), 0 0 22px rgba(20, 30, 10, .45); }
+  .lb-colony small { display: block; font-size: 11px; letter-spacing: .1em; font-weight: 800; opacity: .92; }
+  .lb-district { translate: -50% -50%; text-align: center; padding: 5px 12px 6px; border-radius: 12px; font-weight: 900; font-size: 14px; color: var(--ink);
+    background: rgba(255, 250, 240, .95); border: 2px solid var(--panel-edge); box-shadow: 0 3px 0 rgba(90, 60, 20, .16), 0 8px 18px rgba(40, 30, 10, .2); }
+  .lb-district small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .lb-district i { font-style: normal; }
+  .lb-district .live { color: #2f9a4f; }
+  .lb-district .need { color: #b77a00; }
+  .lb-pin { translate: -50% calc(-100% - 8px); display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px; border-radius: 999px; font-weight: 800; font-size: 12.5px;
+    color: var(--ink); background: #fffaf0; border: 2px solid var(--panel-edge); box-shadow: 0 2px 0 rgba(90, 60, 20, .16), 0 6px 14px rgba(40, 30, 10, .22); }
+  .lb-pin::after { content: ''; position: absolute; left: 50%; bottom: -8px; width: 2px; height: 7px; margin-left: -1px; background: var(--panel-edge); }
+  .lb-pin .t { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .lb-pin.compact { padding: 3px; gap: 4px; }
+  .lb-pin.compact .coin { margin-right: 2px; }
+  .lb-pin.need { background: #ffd166; border-color: #e0a100; animation: nudge 1.1s ease-in-out infinite; }
+  .lb-pin.need::after { background: #e0a100; }
+  .lb-pin.sel { border-color: #ffb703; box-shadow: 0 0 0 3px rgba(255, 183, 3, .45), 0 6px 14px rgba(40, 30, 10, .22); }
+  .lb-pin:hover { filter: brightness(1.04); }
+  .lb .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 900; color: #fff;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .08); }
+  .lb .dot.working { background: #3fbf63; animation: live 1.6s ease-out infinite; }
+  .lb .dot.waiting { background: #e08a00; }
+  .lb .dot.open { background: #5aa9e6; }
+  .lb .dot.closed { background: #b3a994; }
+  .lb .coin { padding: 1px 7px; border-radius: 999px; background: #fff1c4; color: #8a5a00; border: 1.5px solid #f0c24a; font-size: 11.5px; font-weight: 900; }
+  .lb-edge { translate: -50% -50%; display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 999px; font-weight: 800; font-size: 12.5px;
+    background: #ffd166; border: 2px solid #e0a100; color: #4a3300; box-shadow: var(--shadow); }
+  .lb-edge .arrow { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  .lb-edge .arrow::before { content: ''; position: absolute; left: 0; top: -8px; border: 8px solid transparent; border-left: 11px solid #e0a100;
+    transform: translateX(var(--reach, 0)); }
+  @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(63, 191, 99, .6); } 100% { box-shadow: 0 0 0 9px rgba(63, 191, 99, 0); } }
+  @keyframes nudge { 50% { translate: -50% calc(-100% - 13px); } }
+  body.in-room #labels { display: none; }
+  @media (prefers-reduced-motion: reduce) { .lb-pin.need, .lb .dot.working { animation: none; } }
+
   @media (max-width: 760px) {
     .stats, #key, .profile .meta { display: none; }
     #hud { top: auto; bottom: 0; width: 100%; height: 45%; border-left: 0; border-top: 2px solid var(--panel-edge); border-radius: 18px 18px 0 0; }
@@ -171,6 +212,7 @@
 </head>
 <body>
 <canvas id="city"></canvas>
+<div id="labels"></div>
 
 <div class="top">
   <div class="profile panel">

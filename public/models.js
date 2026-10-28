@@ -1,4 +1,6 @@
-// Procedural low-poly models: buildings, the player's car, robots, coins, gates and props.
+// Procedural models: buildings, the player's car, robots, coins, gates and props.
+// Everything is smooth-shaded, with bevelled edges and soft rounded shapes, so
+// the city reads as a polished miniature rather than a pile of facets.
 import * as THREE from './three.js';
 import { mix, shade, rng, hash } from './util.js';
 
@@ -33,7 +35,7 @@ export const FLOOR = 0.55; // world units per storey
 const mats = new Map();
 export function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
-  if (!mats.has(key)) mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, flatShading: true, vertexColors: true, ...opts }));
+  if (!mats.has(key)) mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, vertexColors: true, ...opts }));
   return mats.get(key);
 }
 const glow = new Map();
@@ -58,19 +60,104 @@ export function ao(geo, dark = 0.7) {
   return geo;
 }
 
+// Joins non-indexed copies of several geometries into one (position, normal, colour).
+function merge(geos) {
+  const parts = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  const out = new THREE.BufferGeometry();
+  for (const name of ['position', 'normal', 'color']) {
+    if (!parts.every((p) => p.attributes[name])) continue;
+    const arr = new Float32Array(parts.reduce((n, p) => n + p.attributes[name].array.length, 0));
+    let o = 0;
+    for (const p of parts) { arr.set(p.attributes[name].array, o); o += p.attributes[name].array.length; }
+    out.setAttribute(name, new THREE.BufferAttribute(arr, 3));
+  }
+  return out;
+}
+
+// Smooths the normals of a non-indexed geometry across edges flatter than
+// `angle`, keeping sharper creases crisp: rounded corners shade smoothly while
+// the walls they join stay flat.
+function crease(geo, angle = 0.7) {
+  const pos = geo.attributes.position, nor = geo.attributes.normal, cos = Math.cos(angle);
+  const buckets = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(i);
+  }
+  const out = new Float32Array(pos.count * 3), a = new THREE.Vector3(), b = new THREE.Vector3(), sum = new THREE.Vector3();
+  for (const list of buckets.values()) for (const i of list) {
+    a.fromBufferAttribute(nor, i);
+    sum.set(0, 0, 0);
+    for (const j of list) { b.fromBufferAttribute(nor, j); if (a.dot(b) >= cos) sum.add(b); }
+    sum.normalize().toArray(out, i * 3);
+  }
+  geo.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+  return geo;
+}
+
+// Cheap smooth noise for organic shapes.
+const wobble = (x, y, z) => Math.sin(x * 7.1 + y * 3.3) * Math.cos(z * 6.3 - x * 2.1) + 0.5 * Math.sin(y * 11.7 + z * 9.1);
+
+// A fluffy tree crown: a few lumpy spheres clustered together.
+function crown() {
+  const lumps = [[0, 0, 0, 0.5], [0.24, -0.08, 0.1, 0.34], [-0.22, -0.06, -0.12, 0.36], [0.04, 0.22, -0.06, 0.34], [-0.06, -0.1, 0.26, 0.3]];
+  return ao(merge(lumps.map(([x, y, z, r]) => {
+    const g = new THREE.SphereGeometry(r, 14, 10);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+      const k = 1 + wobble(vx + x, vy + y, vz + z) * 0.08;
+      p.setXYZ(i, vx * k + x, vy * k + y, vz * k + z);
+    }
+    g.computeVertexNormals();
+    return g;
+  })), 0.55);
+}
+
+// A pine: three stacked tiers.
+function pine() {
+  return ao(merge([[0, 1, 0.5], [0.32, 0.8, 0.42], [0.6, 0.58, 0.34]].map(([y, r, h]) => new THREE.ConeGeometry(r * 0.5, h, 14, 1).translate(0, y + h / 2, 0))), 0.55);
+}
+
 export const GEO = {
   box: ao(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), // boxes sit on y = 0
-  cyl: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 10).translate(0, 0.5, 0)),
-  cyl6: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 6).translate(0, 0.5, 0)),
-  sphere: ao(new THREE.IcosahedronGeometry(0.5, 1), 0.8),
-  blob: ao(new THREE.IcosahedronGeometry(0.5, 0), 0.62),
+  cyl: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 24).translate(0, 0.5, 0)),
+  cyl6: ao(new THREE.CylinderGeometry(0.5, 0.5, 1, 12).translate(0, 0.5, 0)),
+  sphere: ao(new THREE.SphereGeometry(0.5, 20, 14), 0.8),
+  blob: ao(new THREE.IcosahedronGeometry(0.5, 3), 0.62),
+  crown: crown(),
+  pine: pine(),
   cone4: ao(new THREE.ConeGeometry(0.5, 1, 4).translate(0, 0.5, 0), 0.8),
-  cone6: ao(new THREE.ConeGeometry(0.5, 1, 6).translate(0, 0.5, 0), 0.62),
-  cone8: ao(new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0), 0.75),
-  dome: ao(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0.85),
-  ring: new THREE.RingGeometry(0.85, 1, 40).rotateX(-Math.PI / 2),
+  cone6: ao(new THREE.ConeGeometry(0.5, 1, 16).translate(0, 0.5, 0), 0.62),
+  cone8: ao(new THREE.ConeGeometry(0.5, 1, 24).translate(0, 0.5, 0), 0.75),
+  dome: ao(new THREE.SphereGeometry(0.5, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2), 0.85),
+  ring: new THREE.RingGeometry(0.85, 1, 48).rotateX(-Math.PI / 2),
 };
 const SHARED_GEO = new Set(Object.values(GEO));
+
+// A box with rounded vertical edges and a bevelled top and bottom, sitting on
+// y = 0. It is built at its real size rather than scaled, so the bevels stay round.
+const rboxes = new Map();
+export function rbox(w, h, d, r = 0.07) {
+  const key = [w, h, d, r].map((v) => v.toFixed(3)).join('|');
+  if (rboxes.has(key)) return rboxes.get(key);
+  r = Math.max(0.005, Math.min(r, w / 2 - 0.01, d / 2 - 0.01));
+  const b = Math.max(0.002, Math.min(r * 0.6, h / 2 - 0.005));
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2 + r, -d / 2);
+  s.lineTo(w / 2 - r, -d / 2); s.absarc(w / 2 - r, -d / 2 + r, r, -Math.PI / 2, 0);
+  s.lineTo(w / 2, d / 2 - r); s.absarc(w / 2 - r, d / 2 - r, r, 0, Math.PI / 2);
+  s.lineTo(-w / 2 + r, d / 2); s.absarc(-w / 2 + r, d / 2 - r, r, Math.PI / 2, Math.PI);
+  s.lineTo(-w / 2, -d / 2 + r); s.absarc(-w / 2 + r, -d / 2 + r, r, Math.PI, Math.PI * 1.5);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.001, h - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelOffset: -b, bevelSegments: 3, curveSegments: 4 });
+  geo.rotateX(-Math.PI / 2).translate(0, b, 0);
+  geo.deleteAttribute('uv');
+  ao(crease(geo));
+  SHARED_GEO.add(geo);
+  rboxes.set(key, geo);
+  return geo;
+}
 
 // Frees what a subtree created for itself; shared geometry and cached materials stay.
 export function dispose(root) {
@@ -95,6 +182,8 @@ export function part(geo, material, [w, h, d], [x = 0, y = 0, z = 0] = [], shado
   return m;
 }
 const cube = (color, size, pos, opts) => part(GEO.box, mat(color, opts), size, pos);
+const rounded = (color, [w, h, d], pos, opts, radius) => part(rbox(w, h, d, radius), mat(color, opts), [1, 1, 1], pos);
+const GOLD = { metalness: 0.6, roughness: 0.3 };
 
 // ---------- buildings ----------
 export function storeys(s) {
@@ -120,23 +209,20 @@ export function makeBuilding(s, colony) {
   const W = 1.5, H = floors * FLOOR + 0.2, base = 0.14;
   const out = { group: g, height: base + H, windows: [], chimney: null, beacon: null };
 
-  g.add(cube(old ? '#a39b8b' : posh ? '#f6f0e3' : '#e6dcc6', [1.9, base, 1.9], [0, 0, 0]));
-  if (posh) g.add(cube('#e7c45d', [1.94, 0.04, 1.94], [0, base - 0.02, 0], { metalness: 0.6, roughness: 0.35 }));
-  const body = cube(color, [W, H, W], [0, base, 0]);
+  g.add(rounded(old ? '#a39b8b' : posh ? '#f6f0e3' : '#e6dcc6', [1.9, base, 1.9], [0, 0, 0], {}, 0.14));
+  if (posh) g.add(rounded('#e7c45d', [1.94, 0.04, 1.94], [0, base - 0.02, 0], GOLD, 0.15));
+  const body = rounded(color, [W, H, W], [0, base, 0], { roughness: 0.7 }, 0.1);
   g.add(body);
-  for (let f = 1; f < floors; f++) g.add(cube(shade(color, -0.12), [W + 0.03, 0.04, W + 0.03], [0, base + f * FLOOR + 0.1, 0]));
-  // a darker skirting and lighter corner trims give the block a readable silhouette
-  g.add(cube(shade(color, -0.25), [W + 0.04, 0.1, W + 0.04], [0, base, 0]));
-  for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    g.add(cube(shade(color, old ? -0.1 : 0.2), [0.09, H, 0.09], [cx * W / 2, base, cz * W / 2]));
-  }
+  // floor bands and a darker skirting give the block a readable rhythm
+  for (let f = 1; f < floors; f++) g.add(rounded(shade(color, -0.1), [W + 0.05, 0.045, W + 0.05], [0, base + f * FLOOR + 0.1, 0], {}, 0.12));
+  g.add(rounded(shade(color, -0.25), [W + 0.06, 0.12, W + 0.06], [0, base, 0], {}, 0.12));
 
   // roof cap; old roofs sag a little
   const roofY = base + H;
-  const cap = cube(shade(color, 0.18), [W + 0.1, 0.09, W + 0.1], [0, roofY, 0]);
+  const cap = rounded(shade(color, 0.18), [W + 0.12, 0.1, W + 0.12], [0, roofY, 0], {}, 0.13);
   if (old) cap.rotation.z = (r() - 0.5) * 0.08;
   g.add(cap);
-  if (posh) g.add(cube('#e7c45d', [W + 0.14, 0.035, W + 0.14], [0, roofY + 0.09, 0], { metalness: 0.6, roughness: 0.35 }));
+  if (posh) g.add(rounded('#e7c45d', [W + 0.16, 0.04, W + 0.16], [0, roofY + 0.03, 0], GOLD, 0.14)); // a gilded band round the roof
 
   // door and awning on the front (+z)
   g.add(cube(old ? '#5a4634' : '#6b4a33', [0.3, 0.42, 0.04], [0, base, W / 2 + 0.01]));
@@ -175,7 +261,7 @@ export function makeBuilding(s, colony) {
   // rooftop clutter on flat roofs: an AC unit, and a water tank on taller blocks
   if (!['research', 'chat', 'mcp', 'web'].includes(s.kind)) {
     const top = roofY + 0.09;
-    g.add(cube(old ? '#8d8a84' : '#c9ced8', [0.34, 0.2, 0.26], [-0.4, top, 0.38]));
+    g.add(rounded(old ? '#8d8a84' : '#c9ced8', [0.34, 0.2, 0.26], [-0.4, top, 0.38], { metalness: 0.4, roughness: 0.45 }, 0.04));
     g.add(cube('#59606e', [0.2, 0.02, 0.2], [-0.4, top + 0.2, 0.38]));
     if (floors >= 5 && s.kind !== 'agents') { // the HQ antenna stands where the tank would
       for (const [lx, lz] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]]) g.add(cube('#6b5a4c', [0.04, 0.22, 0.04], [-0.35 + lx, top, -0.35 + lz]));
@@ -250,8 +336,10 @@ export function makeCar(model) {
   const c = model.color, dark = shade(c, -0.25);
   const glass = '#bfe4f5';
   const long = model.id === 'van' ? 1.1 : 1;
-  body.add(cube(c, [0.95 * long, 0.22, 0.52], [0, 0.12, 0]));
-  body.add(cube(dark, [0.97 * long, 0.05, 0.54], [0, 0.12, 0]));
+  const paint = { roughness: 0.28, metalness: 0.35 };
+  const shell = (color, [w, h, d], pos, opts = paint) => rounded(color, [w, h, d], pos, opts, Math.min(0.09, h / 2));
+  body.add(shell(c, [0.95 * long, 0.22, 0.52], [0, 0.12, 0]));
+  body.add(shell(dark, [0.97 * long, 0.05, 0.54], [0, 0.12, 0]));
   switch (model.id) {
     case 'van':
       body.add(cube(glass, [0.82, 0.3, 0.48], [-0.04, 0.34, 0]));
@@ -274,8 +362,8 @@ export function makeCar(model) {
       body.add(spare);
       break;
     default:
-      body.add(cube(glass, [0.5, 0.22, 0.46], [-0.05, 0.34, 0]));
-      body.add(cube(c, [0.52, 0.05, 0.48], [-0.05, 0.56, 0]));
+      body.add(shell(glass, [0.5, 0.22, 0.46], [-0.05, 0.33, 0], { roughness: 0.05, metalness: 0.6 }));
+      body.add(shell(c, [0.53, 0.06, 0.49], [-0.05, 0.54, 0]));
       if (model.id === 'taxi') body.add(cube('#ffffff', [0.18, 0.08, 0.12], [-0.05, 0.61, 0]));
   }
   for (const z of [-0.1, 0.1]) {
@@ -285,7 +373,8 @@ export function makeCar(model) {
   const wheels = [];
   for (const x of [-0.3 * long, 0.3 * long]) for (const z of [-0.27, 0.27]) {
     // the wheel's axle runs along z; spinning the holder about z rolls it
-    const w = part(GEO.cyl, mat('#30343e'), [0.24, 0.1, 0.24], [0, 0, -0.05]); // centred on the axle
+    const w = part(GEO.cyl, mat('#30343e', { roughness: 0.9 }), [0.24, 0.1, 0.24], [0, 0, -0.05]); // centred on the axle
+    w.add(part(GEO.cyl, mat('#d9dde5', { metalness: 0.8, roughness: 0.3 }), [0.55, 1.08, 0.55], [0, -0.04, 0], false)); // hubcap
     const holder = new THREE.Group();
     holder.position.set(x, 0.12, z);
     w.rotation.x = Math.PI / 2;
