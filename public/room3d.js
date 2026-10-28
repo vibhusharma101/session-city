@@ -1,11 +1,11 @@
 // Inside a building: a 3D room whose furniture is the kinds of work the session did,
 // with a robot agent walking to whatever it is doing right now.
 import * as THREE from './three.js';
-import { GEO, mat, glowMat, part, makeRobot, makeLabel, KINDS } from './models.js';
+import { GEO, mat, glowMat, part, makeRobot, makeLabel, KINDS, dispose } from './models.js';
 import { mix, shade, damp, clamp } from './util.js';
 
 const ROOM = 7;
-const WALL = 2.6;
+const WALL = 3.0;
 const MAIN = '#e8825e', SUB = '#a58be0';
 
 // x/z footprint in room units; `spot` is where an agent stands to use it.
@@ -20,29 +20,87 @@ const STATIONS = [
 const DESKS = [[2.0, 2.9], [3.4, 2.9], [2.0, 4.2], [3.4, 4.2]];
 const stationFor = (id) => STATIONS.find((s) => s.id === id);
 
+function canvasTexture(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'));
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+// What you see out of the window: sky, a skyline and treetops; lit up at night.
+function windowView(night) {
+  return canvasTexture(512, 360, (g) => {
+    const sky = g.createLinearGradient(0, 0, 0, 360);
+    sky.addColorStop(0, night ? '#0b1430' : '#7fc3f0');
+    sky.addColorStop(1, night ? '#2a3768' : '#dff1fb');
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 512, 360);
+    if (night) {
+      g.fillStyle = '#ffffff';
+      for (let i = 0; i < 40; i++) g.fillRect((i * 97) % 512, (i * 53) % 170, 2, 2);
+      g.fillStyle = '#f4f1e0'; g.beginPath(); g.arc(410, 70, 22, 0, Math.PI * 2); g.fill();
+    } else {
+      g.fillStyle = 'rgba(255,255,255,.9)';
+      for (const [x, y, s] of [[90, 70, 1], [330, 110, 1.3]]) {
+        g.beginPath(); g.ellipse(x, y, 46 * s, 16 * s, 0, 0, Math.PI * 2); g.ellipse(x + 30 * s, y - 10 * s, 30 * s, 16 * s, 0, 0, Math.PI * 2); g.fill();
+      }
+    }
+    let x = 0, i = 0;
+    while (x < 512) {
+      const w = 40 + ((i * 37) % 50), h = 90 + ((i * 71) % 130);
+      g.fillStyle = night ? '#1a2244' : ['#a9b6c9', '#c3cbd8', '#9fb0c4'][i % 3];
+      g.fillRect(x, 360 - h - 40, w - 6, h);
+      for (let wy = 360 - h - 30; wy < 320; wy += 16) for (let wx = x + 6; wx < x + w - 14; wx += 12) {
+        if (night && ((wx * 7 + wy * 3 + i) % 5)) continue;
+        g.fillStyle = night ? '#ffd27a' : 'rgba(255,255,255,.55)';
+        g.fillRect(wx, wy, 6, 8);
+      }
+      x += w; i++;
+    }
+    g.fillStyle = night ? '#16301f' : '#5aa54f';
+    for (let t = 0; t < 14; t++) { g.beginPath(); g.arc(t * 40 + 10, 345, 34, 0, Math.PI * 2); g.fill(); }
+  });
+}
+
+function plant(scene, x, y, z, s) {
+  const shadow = y === 0; // plants up on the shelf would smudge the floor with soft shadows
+  const pot = part(GEO.cyl, mat('#c46a4a'), [0.38 * s, 0.34 * s, 0.38 * s], [x, y, z], shadow);
+  scene.add(pot);
+  const leaves = [[0, 0.7, 0, 0.55], [-0.12, 0.55, 0.08, 0.4], [0.12, 0.6, -0.06, 0.42], [0.04, 0.88, 0.05, 0.36]];
+  for (const [dx, dy, dz, r] of leaves) {
+    scene.add(part(GEO.blob, mat(dy > 0.8 ? '#6fcb5c' : '#4ea545'), [r * s, r * s * 1.1, r * s], [x + dx * s, y + dy * s, z + dz * s], shadow));
+  }
+}
+
 export class Room {
   constructor(session) {
     this.id = session.id;
     const scene = this.scene = new THREE.Scene();
-    scene.background = new THREE.Color('#1f2438');
-    this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+    scene.background = new THREE.Color('#e9dcc6'); // never seen: the room encloses the camera
+    // you stand in a front corner of the room, at eye height, looking across it
+    this.camera = new THREE.PerspectiveCamera(52, 1, 0.05, 60);
     this.yaw = Math.PI / 4;
     this.yawGoal = this.yaw;
-    scene.add(new THREE.HemisphereLight('#fff6e8', '#6a5040', 1.3));
-    const key = new THREE.DirectionalLight('#fff0d8', 2.2);
-    key.position.set(9, 12, 7);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    const sc = key.shadow.camera;
-    sc.left = sc.bottom = -7; sc.right = sc.top = 7;
-    key.target.position.set(3.5, 0, 3.5);
-    scene.add(key, key.target);
-    this.lamp = new THREE.PointLight('#ffcf8a', 0, 9);
-    this.lamp.position.set(3.5, 2.3, 3.5);
-    scene.add(this.lamp);
+
+    // daylight through the window, warm bounce off the floor, and the ceiling lamps
+    this.fill = new THREE.HemisphereLight('#fff6e8', '#8a6a4c', 1.2);
+    this.sunlight = new THREE.DirectionalLight('#fff0d8', 1.6);
+    this.sunlight.position.set(-6, 9, 4);
+    this.sunlight.castShadow = true;
+    this.sunlight.shadow.mapSize.set(1024, 1024);
+    this.sunlight.shadow.normalBias = 0.02;
+    const sc = this.sunlight.shadow.camera;
+    sc.left = sc.bottom = -6; sc.right = sc.top = 6;
+    this.sunlight.target.position.set(3.5, 0, 3.5);
+    scene.add(this.fill, this.sunlight, this.sunlight.target);
 
     this.hits = [];
     this.anim = {};
+    this.lamps = [];
     this.buildRoom(session);
     this.buildStations(session);
 
@@ -60,50 +118,130 @@ export class Room {
       this.subs.push(r);
     }
     this.state = { lastGroup: null, wanderAt: 0, goalId: 'build', mode: 'idle' };
-    this.zzz = [];
   }
 
   buildRoom(s) {
     const kind = KINDS[s.kind].color;
-    const wall = mix('#f4efe6', kind, 0.2);
     const scene = this.scene;
-    // floor boards
-    const c = document.createElement('canvas');
-    c.width = c.height = 256;
-    const g = c.getContext('2d');
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-      g.fillStyle = (x + y) % 2 ? '#d7b48c' : '#cfab82';
-      g.fillRect(x * 32, y * 32, 32, 32);
+    const upper = mix('#f6f0e4', kind, 0.16), lower = mix(shade(kind, -0.15), '#8a6a4c', 0.35);
+    const add = (m) => { m.castShadow = false; scene.add(m); return m; };
+
+    // floorboards
+    const floorTex = canvasTexture(512, 512, (g) => {
+      for (let row = 0; row < 16; row++) {
+        let x = -((row * 97) % 180);
+        while (x < 512) {
+          const w = 140 + ((row * 31 + Math.abs(x)) % 90);
+          const tone = 168 + ((row * 13 + Math.abs(x) * 7) % 26);
+          g.fillStyle = `rgb(${tone + 40},${tone - 2},${tone - 52})`;
+          g.fillRect(x, row * 32, w, 32);
+          g.fillStyle = 'rgba(60,35,15,.35)';
+          g.fillRect(x, row * 32, 2, 32);
+          x += w;
+        }
+        g.fillStyle = 'rgba(60,35,15,.4)';
+        g.fillRect(0, row * 32, 512, 2);
+      }
+    });
+    floorTex.repeat.set(2, 2);
+    add(part(GEO.box, new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.7 }), [ROOM, 0.1, ROOM], [ROOM / 2, -0.1, ROOM / 2]));
+    add(part(GEO.box, mat(mix(kind, '#ffffff', 0.3), { flatShading: false }), [3.9, 0.02, 2.7], [3.65, 0, 3.75]));
+    add(part(GEO.box, mat(mix(kind, '#ffffff', 0.6), { flatShading: false }), [3.5, 0.025, 2.3], [3.65, 0, 3.75]));
+
+    // four walls (two-tone, with a dado rail and skirting) and a ceiling, so every
+    // direction you look is room
+    const walls = [
+      { x: -0.07, z: ROOM / 2, alongZ: true },
+      { x: ROOM + 0.07, z: ROOM / 2, alongZ: true },
+      { x: ROOM / 2, z: -0.07, alongZ: false },
+      { x: ROOM / 2, z: ROOM + 0.07, alongZ: false },
+    ];
+    const span = (t, len = ROOM + 0.28) => (w) => (w.alongZ ? [t, 0, len] : [len, 0, t]);
+    for (const w of walls) {
+      const size = (t, h, len) => { const [a, , b] = span(t, len)(w); return [a, h, b]; };
+      add(part(GEO.box, mat(upper, { flatShading: false }), size(0.14, WALL), [w.x, 0, w.z]));
+      add(part(GEO.box, mat(lower, { flatShading: false }), size(0.17, 1.0, ROOM), [w.x, 0, w.z]));
+      add(part(GEO.box, mat('#f4ead8'), size(0.21, 0.06, ROOM), [w.x, 1.0, w.z]));
+      add(part(GEO.box, mat(shade(lower, -0.3)), size(0.21, 0.14, ROOM), [w.x, 0, w.z]));
+      add(part(GEO.box, mat('#efe6d4', { emissive: '#8a7d68', emissiveIntensity: 0.45 }), size(0.3, 0.12, ROOM), [w.x, WALL - 0.12, w.z]));
     }
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(ROOM / 8 * 2, ROOM / 8 * 2);
-    tex.magFilter = THREE.NearestFilter;
-    const floor = part(GEO.box, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }), [ROOM, 0.1, ROOM], [ROOM / 2, -0.1, ROOM / 2], false);
-    scene.add(floor);
-    scene.add(part(GEO.box, mat(mix(kind, '#ffffff', 0.35), { flatShading: false }), [3.9, 0.02, 2.6], [3.65, 0, 3.75], false));
+    // the ceiling only sees bounce light from the floor, so give it a soft glow of its own
+    add(part(GEO.box, mat('#f7f2e8', { flatShading: false, emissive: '#b9a88f', emissiveIntensity: 0.55 }), [ROOM + 0.3, 0.12, ROOM + 0.3], [ROOM / 2, WALL, ROOM / 2]));
 
-    // two walls with skirting, a window and the exit door
-    scene.add(part(GEO.box, mat(shade(wall, -0.06)), [0.12, WALL, ROOM], [-0.06, 0, ROOM / 2]));
-    scene.add(part(GEO.box, mat(wall), [ROOM, WALL, 0.12], [ROOM / 2, 0, -0.06]));
-    scene.add(part(GEO.box, mat(shade(wall, -0.3)), [0.14, 0.14, ROOM], [-0.05, 0, ROOM / 2]));
-    scene.add(part(GEO.box, mat(shade(wall, -0.3)), [ROOM, 0.14, 0.14], [ROOM / 2, 0, -0.05]));
-    scene.add(part(GEO.box, mat('#ffffff'), [0.06, 1.1, 1.8], [0.01, 1.2, 3.75], false));
-    this.windowGlass = part(GEO.box, new THREE.MeshBasicMaterial({ color: '#9fd3f0', toneMapped: false }), [0.07, 0.95, 1.65], [0.02, 1.27, 3.75], false);
-    scene.add(this.windowGlass);
-    scene.add(part(GEO.box, mat('#ffffff'), [0.08, 0.95, 0.05], [0.02, 1.27, 3.75], false));
+    // a window onto the city (sky and skyline change with day and night)
+    this.views = { day: windowView(false), night: windowView(true) };
+    const z0 = 2.85, len = 1.8, y0 = 1.05, h = 1.25;
+    this.pane = new THREE.Mesh(new THREE.PlaneGeometry(len, h), new THREE.MeshBasicMaterial({ map: this.views.day, toneMapped: false }));
+    this.pane.rotation.y = Math.PI / 2;
+    this.pane.position.set(0.09, y0 + h / 2, z0 + len / 2);
+    add(this.pane);
+    const bar = (sx, sy, sz, px, py, pz) => add(part(GEO.box, mat('#ffffff'), [sx, sy, sz], [px, py, pz]));
+    bar(0.1, 0.08, len + 0.16, 0.11, y0 - 0.08, z0 + len / 2);
+    bar(0.1, 0.08, len + 0.16, 0.11, y0 + h, z0 + len / 2);
+    bar(0.1, h, 0.08, 0.11, y0, z0 - 0.04);
+    bar(0.1, h, 0.08, 0.11, y0, z0 + len + 0.04);
+    bar(0.1, h, 0.05, 0.11, y0, z0 + len / 2);
+    bar(0.24, 0.05, len + 0.3, 0.14, y0 - 0.1, z0 + len / 2);
 
+    // the exit door
     const door = new THREE.Group();
-    door.add(part(GEO.box, mat('#8a6446'), [0.8, 1.45, 0.08], [6.4, 0, 0.02]));
-    door.add(part(GEO.box, mat('#a77a55'), [0.68, 1.35, 0.1], [6.4, 0, 0.03]));
-    door.add(part(GEO.sphere, mat('#f2d48a', { metalness: 0.6, roughness: 0.3 }), [0.08, 0.08, 0.08], [6.66, 0.7, 0.1]));
-    const exit = makeLabel('EXIT', 0.22, { bg: '#2fae5a', fg: '#ffffff', font: 800, size: 40, radius: 8 });
-    exit.position.set(6.4, 1.72, 0.1);
+    door.add(part(GEO.box, mat('#6f4f36'), [1.0, 2.05, 0.1], [6.3, 0, 0.03]));
+    door.add(part(GEO.box, mat('#a77a55'), [0.84, 1.95, 0.12], [6.3, 0, 0.04]));
+    for (const y of [0.35, 1.15]) door.add(part(GEO.box, mat('#956b49'), [0.6, 0.6, 0.14], [6.3, y, 0.04]));
+    door.add(part(GEO.sphere, mat('#f2d48a', { metalness: 0.6, roughness: 0.3 }), [0.09, 0.09, 0.09], [6.62, 0.95, 0.13]));
+    const exit = makeLabel('EXIT', 0.26, { bg: '#2fae5a', fg: '#ffffff', font: 800, size: 40, radius: 8 });
+    exit.position.set(6.3, 2.3, 0.12);
     door.add(exit);
     door.traverse((o) => { o.userData.door = true; });
     scene.add(door);
     this.hits.push(door);
+
+    // a wall clock showing the real time, above the coffee machine
+    const clock = new THREE.Group();
+    clock.position.set(4.25, 2.2, 0.09);
+    clock.add(new THREE.Mesh(new THREE.CircleGeometry(0.28, 32), new THREE.MeshStandardMaterial({ map: canvasTexture(128, 128, (g) => {
+      g.fillStyle = '#fffaf0'; g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#3b2f22';
+      for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; g.fillRect(64 + Math.sin(a) * 50 - 2, 64 - Math.cos(a) * 50 - 5, 4, 10); }
+    }) })));
+    clock.add(new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.03, 8, 32), new THREE.MeshStandardMaterial({ color: shade(kind, -0.35) })));
+    const hand = (l, w) => {
+      const pivot = new THREE.Group();
+      pivot.add(new THREE.Mesh(new THREE.BoxGeometry(w, l, 0.01).translate(0, l / 2, 0.015), new THREE.MeshBasicMaterial({ color: '#2b2118' })));
+      clock.add(pivot);
+      return pivot;
+    };
+    this.anim.clock = { hour: hand(0.15, 0.025), minute: hand(0.22, 0.016) };
+    scene.add(clock);
+
+    // framed art above the workbench, in the building's colour
+    const art = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.75), new THREE.MeshStandardMaterial({ map: canvasTexture(220, 150, (g) => {
+      g.fillStyle = mix(kind, '#ffffff', 0.55); g.fillRect(0, 0, 220, 150);
+      g.fillStyle = shade(kind, -0.1); g.beginPath(); g.arc(70, 80, 42, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(110, 130); g.lineTo(160, 40); g.lineTo(210, 130); g.fill();
+      g.fillStyle = shade(kind, -0.35); g.fillRect(0, 128, 220, 22);
+    }) }));
+    art.position.set(2.75, 1.85, 0.1);
+    add(art);
+    add(part(GEO.box, mat('#5a4030'), [1.22, 0.87, 0.04], [2.75, 1.85 - 0.435, 0.06]));
+
+    // a shelf of plants over the switchboard, and potted plants in the corners
+    add(part(GEO.box, mat('#8a6446'), [0.3, 0.05, 1.5], [0.2, 1.75, 5.1]));
+    for (const z of [4.6, 5.1, 5.6]) plant(scene, 0.2, 1.8, z, 0.35);
+    plant(scene, 6.5, 0, 2.6, 1);
+    plant(scene, 0.55, 0, 6.45, 1.2);
+    plant(scene, 6.45, 0, 6.45, 0.9);
+
+    // pendant lamps
+    for (const [x, z] of [[2.7, 3.6], [4.6, 3.6]]) {
+      add(part(GEO.cyl, mat('#3b3f4a'), [0.015, 0.7, 0.015], [x, WALL - 0.7, z]));
+      add(part(GEO.cone8, mat(shade(kind, -0.25), { side: THREE.DoubleSide }), [0.55, 0.32, 0.55], [x, WALL - 1.0, z]));
+      const bulb = add(part(GEO.sphere, new THREE.MeshBasicMaterial({ color: '#fff1c4', toneMapped: false }), [0.14, 0.14, 0.14], [x, WALL - 1.0, z]));
+      const light = new THREE.PointLight('#ffcf8a', 0.5, 7, 1.6);
+      light.position.set(x, WALL - 1.15, z);
+      scene.add(light);
+      this.lamps.push({ light, bulb });
+    }
   }
 
   buildStations(s) {
@@ -183,13 +321,21 @@ export class Room {
     }
   }
 
-  resize(w, h) {
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.dist = clamp(22 / Math.min(1.4, w / h), 15, 30);
+  dispose() {
+    this.views.day.dispose();
+    this.views.night.dispose();
+    dispose(this.scene);
   }
 
-  rotate(dx) { this.yawGoal = clamp(this.yawGoal - dx * 0.006, Math.PI / 4 - 0.6, Math.PI / 4 + 0.6); }
+  resize(w, h) {
+    this.camera.aspect = w / h;
+    // narrow screens need a wider lens to keep the room in view
+    this.camera.fov = clamp(70 - (w / h) * 11, 48, 62);
+    this.camera.updateProjectionMatrix();
+  }
+
+  // Dragging turns your head; you stay standing in the corner.
+  rotate(dx) { this.yawGoal = clamp(this.yawGoal - dx * 0.004, Math.PI / 4 - 0.55, Math.PI / 4 + 0.55); }
 
   pick(raycaster) {
     const hit = raycaster.intersectObjects(this.hits, true)[0];
@@ -198,13 +344,27 @@ export class Room {
   }
 
   update(dt, t, s, night) {
-    // camera
-    this.yaw += (this.yawGoal - this.yaw) * damp(8, dt);
-    const d = this.dist ?? 19;
-    this.camera.position.set(3.5 + Math.sin(this.yaw) * d * 0.72, d * 0.62, 3.5 + Math.cos(this.yaw) * d * 0.72);
-    this.camera.lookAt(3.3, 0.6, 3.3);
-    this.windowGlass.material.color.set(night > 0.5 ? '#1d2a55' : mix('#9fd3f0', '#1d2a55', night));
-    this.lamp.intensity = night * 6;
+    // camera: standing in the front corner at eye height, with a slow breathing sway
+    this.yaw += (this.yawGoal - this.yaw) * damp(6, dt);
+    const sway = Math.sin(t / 2600) * 0.012;
+    this.camera.position.set(6.55, 2.05 + sway, 6.55);
+    const look = 6.2;
+    this.camera.lookAt(6.55 - Math.sin(this.yaw) * look, 0.55, 6.55 - Math.cos(this.yaw) * look);
+
+    // light: daylight through the window by day, the pendant lamps at night
+    this.sunlight.intensity = 1.6 * (1 - night) + 0.15;
+    this.fill.intensity = 1.2 - night * 0.55;
+    this.fill.color.set(mix('#fff6e8', '#c9b7a0', night));
+    for (const l of this.lamps) {
+      l.light.intensity = 0.4 + night * 5;
+      l.bulb.material.color.set(night > 0.3 ? '#ffe2a0' : '#fff6dc');
+    }
+    const view = night > 0.5 ? this.views.night : this.views.day;
+    if (this.pane.material.map !== view) { this.pane.material.map = view; this.pane.material.needsUpdate = true; }
+    const now = new Date();
+    const mins = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+    this.anim.clock.minute.rotation.z = -(mins % 60) / 60 * Math.PI * 2;
+    this.anim.clock.hour.rotation.z = -(mins % 720) / 720 * Math.PI * 2;
 
     // where the agent wants to be
     const st = this.state;

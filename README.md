@@ -64,7 +64,7 @@ The card shows what the session was about, how busy it was, and the coins waitin
 
 ### Step inside
 
-Each room is furnished with the work the session did. The robot agent walks to whatever it is doing right now, with its latest action in a speech bubble. Subagents work at the desks, and the side panel shows the live activity feed.
+You stand inside the session's room: floorboards, lamps, a clock with your real time, and a window onto the city that turns to night when you do. The room is furnished with the work the session did. The robot agent walks to whatever it is doing right now, with its latest action in a speech bubble. Subagents work at the desks, and the side panel shows the live activity feed. Drag to look around.
 
 ![Inside a building: a robot at the workbench, subagent robots at desks, and the activity feed](docs/images/inside.jpg)
 

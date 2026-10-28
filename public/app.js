@@ -2,7 +2,7 @@ import * as THREE from './three.js';
 import { City } from './city3d.js';
 import { Room } from './room3d.js';
 import { buildLayout, colonyOf, COLONIES } from './layout.js';
-import { KINDS, STATUS, CAR_MODELS, carById, makeCar, dispose } from './models.js';
+import { KINDS, STATUS, CAR_MODELS, carById, makeCar } from './models.js';
 import { createGame, pending, collect, levelOf, quests, progress, claim, visited, actionsOf } from './game.js';
 import { sfx } from './sfx.js';
 import { renderPostcard, cityStats, openShare } from './share.js';
@@ -325,7 +325,7 @@ function leave() {
   transition(() => {
     state.scene = 'city';
     city.active = true;
-    dispose(state.room.scene);
+    state.room.dispose();
     state.room = null;
     hud.hidden = true;
     bubble.hidden = true;
@@ -456,7 +456,7 @@ function frame(t) {
     const s = state.roomSession;
     state.room.update(dt, t, s, n);
     const u = city.post.uniforms;
-    u.uBlur.value = 0.45; u.uBand.value = 0.3; u.uFocus.value = 0.5;
+    u.uBlur.value = 0.18; u.uBand.value = 0.36; u.uFocus.value = 0.45; // you are in the room, not looking at a model
     city.post.render(state.room.scene, state.room.camera);
     const p = state.room.headPosition().project(state.room.camera);
     const r = canvas.getBoundingClientRect();
