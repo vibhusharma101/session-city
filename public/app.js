@@ -9,6 +9,7 @@ import { renderPostcard, cityStats, openShare } from './share.js';
 import { esc, fmtNum, ago, span, store } from './util.js';
 import { demoCity, demoActivity } from './demo.js';
 import { Labels } from './labels.js';
+import { Minimap } from './minimap.js';
 
 // ?demo shows a made-up city instead of this machine's sessions.
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -59,9 +60,12 @@ const city = new City(canvas, {
   },
   drove: (n) => questsDone(progress(game, 'drive', n)),
   ground() { sfx.click(); closeCard(); },
+  honk: () => sfx.honk(),
 });
 city.active = true;
-const labels = new Labels($('labels'), city, { select: (rec) => selectBuilding(rec), coins: (rec) => Math.max(0, rec.pending) });
+const minimap = new Minimap($('minimap'), city, { select: (rec) => selectBuilding(rec) });
+const labels = new Labels($('labels'), city, { select: (rec) => selectBuilding(rec), coins: (rec) => Math.max(0, rec.pending),
+  avoid: () => { const r = $('minimap').getBoundingClientRect(); return [{ l: r.left, r: r.right, t: r.top, b: r.bottom }]; } });
 if (new URLSearchParams(location.search).has('debug')) window.sc = { city, game, state }; // for poking at it from devtools
 
 // ---------- data ----------
@@ -85,6 +89,7 @@ function rebuild() {
     for (const d of ds) for (const s of d.list) state.seen.add(s.id);
     store.setJson('sc.seen', [...state.seen]);
     labels.build();
+    minimap.build();
   } else {
     for (const rec of city.recs.values()) rec.s = rec.b.s = findSession(rec.s.id) ?? rec.s;
   }
@@ -113,7 +118,8 @@ async function load() {
     state.loaded = true;
     $('loading').style.opacity = 0;
     setTimeout(() => $('loading').remove(), 500);
-    if (!store.get('sc.car') && !DEMO) setTimeout(openPicker, 1400);
+    if (!store.get('sc.rules')) setTimeout(openRules, 900);
+    else if (!store.get('sc.car') && !DEMO) setTimeout(openPicker, 1400);
   }
 }
 
@@ -206,7 +212,7 @@ function renderCard() {
     city.driveTo(rec);
     renderCard();
   };
-  $('card-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('card-story')?.addEventListener('click', (e) => openStory(e, s));
 }
 
 function closeCard() {
@@ -371,7 +377,7 @@ function renderHud() {
       <button id="copy">Copy resume command</button>
     </details>`;
   $('leave').onclick = leave;
-  $('hud-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('hud-story')?.addEventListener('click', (e) => openStory(e, s));
   $('copy').onclick = (e) => navigator.clipboard?.writeText(resume).then(() => { e.target.textContent = 'Copied'; });
   renderFeed();
 }
@@ -384,7 +390,28 @@ function renderFeed() {
     : '<li class="muted">Loading…</li>';
 }
 
+// The story opens over the game, so you stay in your city. Ctrl/Cmd/Shift-click
+// still opens it in its own tab.
+function openStory(e, s) {
+  questsDone(progress(game, 'story', 1));
+  if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+  e.preventDefault();
+  sfx.click();
+  const url = e.currentTarget.href;
+  $('story-title').textContent = s.title || 'Untitled session';
+  $('story-open').href = url;
+  $('story-frame').src = url;
+  $('story').hidden = false;
+  $('story-x').focus();
+}
+function closeStory() {
+  $('story').hidden = true;
+  $('story-frame').src = 'about:blank';
+}
+
 function bubbleText(s) {
+  const q = state.room?.quip;
+  if (q && performance.now() < q.until) return q.text;
   if (s.status === 'waiting') return 'I need you! Check your terminal.';
   if (s.status === 'open') return 'Coffee break. Ready for your next prompt.';
   if (s.status === 'closed') return 'Zzz… this session is closed.';
@@ -425,6 +452,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (!hit || e.pointerType !== 'mouse') { tip.hidden = true; return; }
   const s = state.roomSession;
   tip.innerHTML = hit.door ? '<b>Exit</b><span class="muted">Back to the city</span>'
+    : hit.bot ? `<b>${hit.main ? 'Your agent' : 'A subagent'}</b><span class="muted">Click to poke it</span>`
     : hit.station.id === 'chat' ? '<b>Coffee machine</b><span class="muted">Where your agent waits for your next prompt</span>'
     : `<b>${hit.station.label}</b><span class="muted">${(s.groups?.[hit.station.id] || 0).toLocaleString()} ${hit.station.unit}</span>`;
   tip.hidden = false;
@@ -435,7 +463,13 @@ canvas.addEventListener('pointerup', (e) => {
   if (state.scene !== 'room' || !state.room) return;
   const d = roomDrag;
   roomDrag = null;
-  if (d && !d.moved && roomPick(e)?.door) leave();
+  if (!d || d.moved) return;
+  const hit = roomPick(e);
+  if (hit?.door) leave();
+  else if (hit?.bot) {
+    const { kind } = state.room.poke(hit.bot, state.roomSession, performance.now());
+    (kind === 'dance' ? sfx.quest : kind === 'spin' ? sfx.beep : sfx.boing)();
+  }
 });
 
 // ---------- sky ----------
@@ -476,6 +510,7 @@ function frame(t) {
     city.update(dt, t);
     city.render();
     labels.update();
+    minimap.update(t);
   }
   requestAnimationFrame(frame);
 }
@@ -546,6 +581,23 @@ $('sky').onclick = () => {
   renderSkyButton();
 };
 $('me').onclick = openPicker;
+$('help').onclick = () => { sfx.click(); openRules(); };
+$('rules-x').onclick = closeRules;
+$('story-x').onclick = closeStory;
+$('story').onclick = (e) => { if (e.target === $('story')) closeStory(); };
+// Escape pressed while reading (inside the frame) closes the story too
+$('story-frame').addEventListener('load', () => {
+  try {
+    const win = $('story-frame').contentWindow;
+    win.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeStory(); });
+    // the page's own "back to the city" link would load a second city inside the frame
+    for (const link of win.document.querySelectorAll('a[href="/"]')) link.addEventListener('click', (e) => { e.preventDefault(); closeStory(); });
+  } catch { /* not same-origin */ }
+});
+$('rules-go').onclick = closeRules;
+$('rules').onclick = (e) => { if (e.target === $('rules')) closeRules(); };
+$('minimap').querySelector('.expand').onclick = () => { sfx.click(); minimap.toggleBig(); };
+document.querySelectorAll('#minimap [data-colony]').forEach((b) => { b.onclick = () => { sfx.click(); city.fit(false, b.dataset.colony); }; });
 $('picker-x').onclick = closePicker;
 $('picker').onclick = (e) => { if (e.target === $('picker')) closePicker(); };
 $('mute').onclick = () => { $('mute').textContent = sfx.toggle() ? '🔇' : '🔊'; sfx.click(); };
@@ -594,8 +646,22 @@ $('legend').innerHTML = Object.values(KINDS)
   .map((k) => `<div><span class="sw" style="background:${k.color}"></span> ${k.label}</div><div class="muted">${k.desc}</div>`)
   .join('');
 
+function openRules() { $('rules').hidden = false; $('rules-go').focus(); }
+function closeRules() {
+  $('rules').hidden = true;
+  const first = !store.get('sc.rules');
+  store.set('sc.rules', '1');
+  if (first && !store.get('sc.car') && !DEMO) setTimeout(openPicker, 300);
+}
+
 document.addEventListener('keydown', (e) => {
+  if (e.target.closest?.('input, textarea, select')) return;
+  if (e.key.toLowerCase() === 'm' && state.scene === 'city' && !e.metaKey && !e.ctrlKey) { minimap.toggleBig(); return; }
+  if (e.key === '?') { openRules(); return; }
   if (e.key !== 'Escape') return;
+  if (!$('story').hidden) return closeStory();
+  if (!$('rules').hidden) return closeRules();
+  if (minimap.big) return minimap.toggleBig(false);
   if (!$('share').hidden) return;
   if (!$('picker').hidden) return closePicker();
   if (state.scene === 'room') return leave();

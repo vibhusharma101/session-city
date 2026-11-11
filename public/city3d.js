@@ -603,6 +603,15 @@ export class City {
     return c.path.length;
   }
 
+  // Clicking your car makes it hop, spin a little and honk.
+  hopCar() {
+    const c = this.car;
+    c.hops = (c.hops ?? 0) + 1;
+    c.hop = { t: 0, spin: c.hops % 3 === 0 }; // every third click, a full spin
+    for (let i = 0; i < 6; i++) this.puff(c.obj.position.clone().setY(0.15), '#efe6d6', 0.25);
+    this.events.honk?.();
+  }
+
   updateCar(dt) {
     const c = this.car;
     if (!c.obj) return;
@@ -639,6 +648,14 @@ export class City {
     for (const w of wheels) w.rotation.z -= c.speed * TILE * dt / 0.15;
     body.rotation.z = clamp(-accel * 0.004, -0.06, 0.06);
     body.position.y = c.speed > 0.1 ? Math.abs(Math.sin(performance.now() / 70)) * 0.02 : 0;
+    body.rotation.y = 0;
+    if (c.hop) {
+      c.hop.t += dt;
+      const k = Math.min(1, c.hop.t / 0.6);
+      body.position.y += Math.sin(k * Math.PI) * 0.5;
+      body.rotation.y = c.hop.spin ? k * Math.PI * 2 : Math.sin(k * Math.PI * 3) * 0.25 * (1 - k);
+      if (k >= 1) c.hop = null;
+    }
   }
 
   // ---------- camera ----------
@@ -736,6 +753,7 @@ export class City {
     const coins = [...this.recs.values()].filter((r) => r.coin?.visible).map((r) => r.coin.userData.hit);
     const hitCoin = this.raycaster.intersectObjects(coins, false)[0];
     if (hitCoin) return { coin: hitCoin.object.userData.coinFor };
+    if (this.car.obj && this.raycaster.intersectObject(this.car.obj, true).length) return { car: true };
     const hit = this.raycaster.intersectObjects(this.city ? this.city.children.filter((o) => o.isGroup) : [], true)
       .find((h) => h.object.userData.rec);
     if (hit) return { rec: hit.object.userData.rec };
@@ -794,7 +812,7 @@ export class City {
       }
       const p = this.pick(e.clientX, e.clientY);
       this.setHover(p.rec ?? p.coin ?? null, e, !!p.coin);
-      canvas.classList.toggle('pointing', !!(p.rec || p.coin || p.road));
+      canvas.classList.toggle('pointing', !!(p.rec || p.coin || p.road || p.car));
     });
     const end = (e) => {
       pointers.delete(e.pointerId);
@@ -806,6 +824,7 @@ export class City {
       if (!this.active || !d || d.moved || d.button !== 0 || e.type === 'pointercancel') return;
       const p = this.pick(e.clientX, e.clientY);
       if (p.coin) this.events.coin(p.coin);
+      else if (p.car) this.hopCar();
       else if (p.rec) this.events.select(p.rec);
       else if (p.road) { this.events.ground?.(p.tile); this.driveTo(p.tile); this.marker(p.tile); }
     };
