@@ -211,6 +211,14 @@
   #minimap.big canvas { width: calc(min(86vmin, 760px) - 16px); height: calc(min(86vmin, 760px) - 16px); border-radius: 16px; }
   #minimap.big .expand { top: 14px; right: 14px; }
 
+  #done { background: #3fd07f; border-color: #1f9a55; color: #0d3d22; box-shadow: 0 3px 0 #1f9a55; font-weight: 900; animation: pop 1.8s ease-in-out infinite; }
+  .card .finished { background: #dcf8e7; color: #1d5e37; border-radius: 12px; padding: 8px 10px; font-size: 12.5px; margin: 0 0 10px; }
+  .card .finished code { background: rgba(255,255,255,.7); padding: 1px 5px; border-radius: 5px; font-size: 12px; word-break: break-all; }
+  .lb-pin.done { background: #dcf8e7; border-color: #3fd07f; }
+  .lb-pin.done::after { background: #3fd07f; }
+  .lb .dot.done { background: #18c46a; animation: live 1.6s ease-out infinite; }
+  .lb-pin .when { font-weight: 700; font-size: 11px; color: #1f9a55; }
+
   /* the session story, over the game */
   .story-sheet { width: min(940px, 100%); height: min(88vh, 960px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
   .story-head { display: flex; align-items: center; gap: 12px; padding: 12px 60px 12px 18px; border-bottom: 2px solid var(--panel-edge); }
@@ -255,6 +263,7 @@
   <div class="coins panel" id="coins" title="Coins: one for every action your agents took"><span class="coin-icon">$</span><span id="coin-n">0</span></div>
   <div class="stats panel" id="stats">Loading…</div>
   <button id="needs" hidden></button>
+  <button id="done" hidden></button>
   <div class="spacer"></div>
   <div class="tools">
     <button id="quests-btn" class="btn-gold">📜 Quests<span class="badge" id="quest-badge" hidden>0</span></button>
@@ -313,7 +322,7 @@
     <div class="rules">
       <div><b>🏙️ Every session is a building</b>Projects are city blocks. The taller the tower, the longer the session ran. The roof shows the kind of work: a crane for edits, a dome for web, a chimney for commands.</div>
       <div><b>🗺️ Three towns</b><span><i class="t up">Uptown</i> live or used today, <i class="t mid">Midtown</i> this week, and <i class="t old">Old Town</i> for sessions abandoned a week or more.</span></div>
-      <div><b>🚦 Read the signs</b>A green pulse means working right now. A yellow <b class="inline">!</b> means a session is waiting for you: the <b class="inline">needs you</b> button visits each one. Drones on the roof are subagents.</div>
+      <div><b>🚦 Read the signs</b>A green pulse means working right now. A yellow <b class="inline">!</b> means a session is waiting for you: the <b class="inline">needs you</b> button visits each one. A green beam means a session just finished its turn: <b class="inline">✅ finished</b> takes you to it and tells you which folder its terminal is in.</div>
       <div><b>🪙 Collect and level up</b>Every action your agents took is a coin. Click a coin or its tag to collect it. Coins give XP, levels unlock new cars, and 📜 quests change daily.</div>
       <div><b>🚗 Get around</b>Drag to move, scroll to zoom, right-drag or Q/E to rotate. Click a road to drive there, or a building to drive to it. Use the map in the corner to jump anywhere; press M for the big map.</div>
       <div><b>🚪 Step inside</b>Drive to a building and go in to watch your agent at work. Click the robots to poke them, and the door to leave. Try clicking your car, too.</div>

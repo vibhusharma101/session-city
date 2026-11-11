@@ -8,7 +8,7 @@ import { COLONIES } from './layout.js';
 
 const PX = 8; // pixels per tile on the cached base layer
 const AREA = { uptown: '#e9d58f', midtown: '#b9d4ec', oldtown: '#cdbb98' };
-const DOT = { working: '#3fbf63', waiting: '#ffb703', open: '#5aa9e6', closed: '#a59c8c' };
+const DOT = { working: '#3fbf63', waiting: '#ffb703', open: '#5aa9e6', closed: '#a59c8c', done: '#18c46a' };
 
 export class Minimap {
   constructor(wrap, city, { select }) {
@@ -101,13 +101,14 @@ export class Minimap {
     for (const rec of city.recs.values()) {
       const x = rec.b.gx + 0.5, y = rec.b.gy + 0.5, s = rec.s;
       const sel = rec === city.selected;
-      const rad = (sel ? 5 : s.status === 'waiting' ? 4.5 : 3.4) / scale;
-      if (s.status === 'waiting') {
+      const loud = s.status === 'waiting' || rec.done;
+      const rad = (sel ? 5 : loud ? 4.5 : 3.4) / scale;
+      if (loud) {
         g.beginPath(); g.arc(x, y, rad * (1.6 + pulse), 0, Math.PI * 2);
-        g.fillStyle = `rgba(255,183,3,${0.35 * (1 - pulse * 0.6)})`; g.fill();
+        g.fillStyle = rec.done ? `rgba(63,224,138,${0.4 * (1 - pulse * 0.6)})` : `rgba(255,183,3,${0.35 * (1 - pulse * 0.6)})`; g.fill();
       }
       g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2);
-      g.fillStyle = DOT[s.status] ?? DOT.closed; g.fill();
+      g.fillStyle = rec.done ? DOT.done : DOT[s.status] ?? DOT.closed; g.fill();
       g.lineWidth = (sel ? 2 : 1.2) / scale; g.strokeStyle = sel ? '#ffb703' : '#ffffff'; g.stroke();
     }
 

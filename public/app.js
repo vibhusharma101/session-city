@@ -10,6 +10,7 @@ import { esc, fmtNum, ago, span, store } from './util.js';
 import { demoCity, demoActivity } from './demo.js';
 import { Labels } from './labels.js';
 import { Minimap } from './minimap.js';
+import { finished, justFinished, pruneSeen } from './done.js';
 
 // ?demo shows a made-up city instead of this machine's sessions.
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -34,6 +35,9 @@ const state = {
   loaded: false,
   enterOnArrive: null,
   hoverId: null,
+  doneSeen: store.json('sc.done', {}), // session id → the lastActivity you had seen it finish at
+  statuses: null,                      // last poll's status per session, to catch ones finishing live
+  done: [],
 };
 
 const city = new City(canvas, {
@@ -107,6 +111,7 @@ async function load() {
     return;
   }
   rebuild();
+  updateFinished();
   quests(game, allSessions());
   renderTop();
   if (city.selected && !card.hidden) renderCard();
@@ -165,6 +170,7 @@ function toast(text, big = false) {
 // ---------- the building card ----------
 function selectBuilding(rec) {
   sfx.click();
+  markSeen(rec.s);
   city.bounce(rec);
   city.selected = rec;
   state.enterOnArrive = null;
@@ -192,6 +198,7 @@ function renderCard() {
       <span class="chip">${esc(rec.b.district)}</span>
       <span class="chip">${ago(s.lastActivity)}</span>
     </div>
+    ${s.status === 'open' ? `<div class="finished">✅ Finished its turn ${ago(s.lastActivity)}. Claude Code is waiting in the terminal at <code>${esc(s.cwd || s.project)}</code>${s.branch ? ` on <b>${esc(s.branch)}</b>` : ''}.</div>` : ''}
     <div class="nums">
       <div class="num"><b>${s.prompts}</b><span>prompts</span></div>
       <div class="num"><b>${fmtNum(actionsOf(s))}</b><span>actions</span></div>
@@ -310,6 +317,7 @@ function transition(mid) {
 
 function enter(rec) {
   sfx.door();
+  markSeen(rec.s);
   questsDone(visited(game, rec.s, rec.colony));
   transition(() => {
     state.scene = 'room';
@@ -603,6 +611,51 @@ $('picker').onclick = (e) => { if (e.target === $('picker')) closePicker(); };
 $('mute').onclick = () => { $('mute').textContent = sfx.toggle() ? '🔇' : '🔊'; sfx.click(); };
 $('mute').textContent = sfx.muted ? '🔇' : '🔊';
 $('quests-btn').onclick = () => { sfx.click(); $('quests').hidden = !$('quests').hidden; if (!$('quests').hidden) renderQuests(); };
+// ---------- sessions that just finished ----------
+// Highlights the one or two newest sessions that finished their turn and are
+// still open, until you look at them, so you know which terminal to check.
+function updateFinished() {
+  const shown = [...city.recs.values()].map((r) => r.s);
+  if (state.statuses) {
+    for (const s of justFinished(state.statuses, shown)) {
+      toast(`✅ Finished: ${s.title || 'a session'} · ${s.project}${s.branch ? ' · ' + s.branch : ''}`, true);
+      sfx.quest();
+    }
+  }
+  state.statuses = new Map(shown.map((s) => [s.id, s.status]));
+  state.done = finished(shown, state.doneSeen);
+  city.setDone(new Set(state.done.map((s) => s.id)));
+  renderFinished();
+}
+
+function markSeen(s) {
+  if (!state.done.some((d) => d.id === s.id)) return;
+  state.doneSeen[s.id] = s.lastActivity;
+  state.doneSeen = pruneSeen(state.doneSeen, allSessions());
+  store.setJson('sc.done', state.doneSeen);
+  updateFinished();
+}
+
+function renderFinished() {
+  const n = state.done.length, btn = $('done');
+  btn.hidden = !n;
+  btn.textContent = `✅ ${n} finished`;
+  btn.title = state.done.map((s) => `${s.title || 'Untitled session'} · ${s.project} · ${ago(s.lastActivity)}`).join('\n');
+  // the tab title tells you too, when the city is in a background tab
+  const waiting = [...city.recs.values()].filter((r) => r.s.status === 'waiting').length;
+  const marks = [n && `✓${n}`, waiting && `!${waiting}`].filter(Boolean).join(' ');
+  document.title = (marks ? `(${marks}) ` : '') + 'Session City';
+}
+
+$('done').onclick = () => { // visits the newest finished session (looking at it clears it)
+  const s = state.done[0];
+  const rec = s && city.recs.get(s.id);
+  if (!rec) return;
+  if (state.scene === 'room') leave();
+  city.focus(rec);
+  selectBuilding(rec);
+};
+
 let needsLast = null;
 $('needs').onclick = () => { // each click visits the next session that needs you
   const list = [...city.recs.values()].filter((r) => r.s.status === 'waiting');

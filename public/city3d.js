@@ -126,6 +126,20 @@ function glassMaterial(glow) {
   return m;
 }
 
+// A vertical fade for the "finished" light beam: bright at the roof, gone at the top.
+function beamTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 128, 0, 0);
+  grad.addColorStop(0, 'rgba(255,255,255,.9)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,.35)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 4, 128);
+  return new THREE.CanvasTexture(c);
+}
+
 // A soft dark blot that grounds each building (cheap contact shadow).
 function blotTexture() {
   const c = document.createElement('canvas');
@@ -223,7 +237,7 @@ export class City {
   setLayout(L, carModel, isNew) {
     const first = !this.L;
     this.L = L;
-    if (this.city) { this.scene.remove(this.city); dispose(this.city); }
+    if (this.city) { this.scene.remove(this.city); dispose(this.city); this.beamTex = null; }
     const city = this.city = new THREE.Group();
     this.scene.add(city);
     const prev = this.recs;
@@ -878,6 +892,25 @@ export class City {
     if (rec.coin) rec.coin.visible = amount > 0; // the amount is shown on the building's label
   }
 
+  // Sessions that just finished get a beam of light from the roof and a ring
+  // on the ground, so you can spot them from anywhere in the city.
+  setDone(ids) {
+    for (const rec of this.recs.values()) {
+      const on = ids.has(rec.s.id);
+      if (on && !rec.beam) {
+        this.beamTex ??= beamTexture();
+        rec.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.9, 1, 32, 1, true).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({
+          map: this.beamTex, color: new THREE.Color('#4dff96').multiplyScalar(1.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+        }));
+        rec.beam.scale.set(1, 9, 1);
+        rec.doneRing = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: '#3fe08a', transparent: true, depthWrite: false }));
+        this.city.add(rec.beam, rec.doneRing);
+      }
+      if (rec.beam) rec.beam.visible = rec.doneRing.visible = on;
+      rec.done = on;
+    }
+  }
+
   // Where a building's label pins to: just above its coin, or its roof.
   labelAnchor(rec, out = new THREE.Vector3()) {
     return out.copy(rec.group.position).setY((rec.top ?? rec.height) + (rec.coin?.visible ? 1.75 : 0.35));
@@ -1040,6 +1073,16 @@ export class City {
         rec.pulse.scale.setScalar(0.9 + k * 1.2);
         rec.pulse.material.opacity = 0.8 * (1 - k);
       } else if (rec.pulse) rec.pulse.visible = false;
+
+      if (rec.done && rec.beam) {
+        rec.beam.position.copy(rec.group.position).setY(top - 0.2);
+        rec.beam.material.opacity = 0.8 + Math.sin(t / 350) * 0.2;
+        rec.beam.rotation.y = t / 2000;
+        const k = (t / 1600 + 0.5) % 1;
+        rec.doneRing.position.copy(rec.group.position).setY(PARK_TOP + 0.05);
+        rec.doneRing.scale.setScalar(1.2 + k * 1.6);
+        rec.doneRing.material.opacity = 0.9 * (1 - k);
+      }
 
       if (rec.chimney && live) {
         rec.smokeT -= dt;
