@@ -73,11 +73,14 @@ You stand inside the session's room: floorboards, lamps, a clock with your real 
 | Do this | How |
 |---|---|
 | Look around | drag to pan, scroll to zoom, right-drag or **Q / E** to turn a quarter, **WASD** or arrow keys to pan, **⤢** for the whole city |
-| Visit a session | click its building: your car drives over and the card opens; **Go inside** enters the room |
+| Find your way | the round map in the corner turns with you and shows every session, your car and what is on screen; click it to go there, use the town buttons, or press **M** for the big map |
+| Visit a session | click its building or its tag: your car drives over and the card opens; **Go inside** enters the room |
 | Collect coins | click the coin above a building (one coin for every action an agent took) |
 | Level up | coins and quests give XP; levels 2 to 6 each unlock a new car (🚗 to switch) |
 | Daily quests | **📜 Quests**: three goals a day, like answering a session that needs you or exploring Old Town |
-| Find who needs you | the yellow **❗ needs you** button flies you to a session waiting for your input |
+| Find who needs you | the yellow **❗ needs you** button visits each session waiting for your input in turn; off-screen ones get an arrow at the screen edge |
+| Have fun | click the robots inside a building to poke them (keep clicking for a dance), or click your car to make it hop |
+| Forget the rules | **?** shows how to play (it also opens on your first visit) |
 | Day or night | follows your clock; ◐ pins day or night until you reload |
 | Sound | small synthesized blips; 🔊 mutes them |
 | Leave a building | the EXIT door, **← Back to the city**, or Escape |

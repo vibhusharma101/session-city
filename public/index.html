@@ -199,11 +199,33 @@
     transform: translateX(var(--reach, 0)); }
   @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(63, 191, 99, .6); } 100% { box-shadow: 0 0 0 9px rgba(63, 191, 99, 0); } }
   @keyframes nudge { 50% { translate: -50% calc(-100% - 13px); } }
-  body.in-room #labels { display: none; }
+  body.in-room #labels, body.in-room #minimap { display: none !important; }
+
+  /* the map: a round radar in the corner, or the big map */
+  #minimap { position: fixed; right: 14px; bottom: 14px; z-index: 4; width: 196px; padding: 8px; border-radius: 22px; transition: width .25s ease, height .25s ease; }
+  #minimap canvas { display: block; width: 180px; height: 180px; border-radius: 50%; cursor: crosshair; box-shadow: inset 0 0 0 3px #fff, 0 0 0 2px var(--panel-edge); }
+  #minimap .expand { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; font-size: 15px; }
+  #minimap .towns { display: flex; gap: 4px; margin-top: 8px; }
+  #minimap .towns button { flex: 1; padding: 4px 0; font-size: 11px; border-radius: 10px; }
+  #minimap.big { right: 50%; bottom: 50%; transform: translate(50%, 50%); width: min(86vmin, 760px); z-index: 15; box-shadow: 0 0 0 100vmax rgba(30, 20, 5, .45), var(--shadow); }
+  #minimap.big canvas { width: calc(min(86vmin, 760px) - 16px); height: calc(min(86vmin, 760px) - 16px); border-radius: 16px; }
+  #minimap.big .expand { top: 14px; right: 14px; }
+
+  /* how to play */
+  .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rules > div { background: var(--soft); border-radius: 14px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
+  .rules > div > b:first-child { display: block; font-size: 14px; margin-bottom: 3px; }
+  .rules .inline { display: inline; }
+  .rules i.t { font-style: normal; font-weight: 800; padding: 0 6px; border-radius: 6px; }
+  .rules .up { background: #fff1c4; color: #8a6200; }
+  .rules .mid { background: #e3f1ff; color: #2c5d8a; }
+  .rules .old { background: #e9e2d6; color: #6d5d48; }
   @media (prefers-reduced-motion: reduce) { .lb-pin.need, .lb .dot.working { animation: none; } }
 
   @media (max-width: 760px) {
     .stats, #key, .profile .meta { display: none; }
+    #minimap:not(.big) { width: 128px; } #minimap:not(.big) canvas { width: 112px; height: 112px; } #minimap:not(.big) .towns { display: none; }
+    .rules { grid-template-columns: 1fr; }
     #hud { top: auto; bottom: 0; width: 100%; height: 45%; border-left: 0; border-top: 2px solid var(--panel-edge); border-radius: 18px 18px 0 0; }
     #quests { left: 12px; right: 12px; width: auto; }
     .looks { grid-template-columns: repeat(2, 1fr); }
@@ -240,6 +262,7 @@
     <button id="sky" class="icon" title="Day / night"></button>
     <button id="me" class="icon" title="Your car" aria-label="Choose your car">🚗</button>
     <button id="mute" class="icon" title="Sound" aria-label="Toggle sound">🔊</button>
+    <button id="help" class="icon" title="How to play (?)" aria-label="How to play">?</button>
     <button id="share-btn" class="btn-accent">Share</button>
   </div>
 </div>
@@ -265,6 +288,34 @@
 </div></div>
 
 <aside id="hud" hidden aria-live="polite"></aside>
+
+<div id="minimap" class="panel">
+  <canvas aria-label="Map of your city. Click to go there."></canvas>
+  <button class="expand icon" title="Open the big map (M)" aria-label="Toggle the big map">⤢</button>
+  <div class="towns">
+    <button data-colony="uptown">Uptown</button><button data-colony="midtown">Midtown</button><button data-colony="oldtown">Old Town</button>
+  </div>
+</div>
+
+<div id="rules" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <button class="x" id="rules-x" aria-label="Close">✕</button>
+    <h2 id="rules-title">How to play Session City</h2>
+    <p class="muted" style="margin:0 0 14px">Your Claude Code sessions, rebuilt as a little city. Everything stays on this machine.</p>
+    <div class="rules">
+      <div><b>🏙️ Every session is a building</b>Projects are city blocks. The taller the tower, the longer the session ran. The roof shows the kind of work: a crane for edits, a dome for web, a chimney for commands.</div>
+      <div><b>🗺️ Three towns</b><span><i class="t up">Uptown</i> live or used today, <i class="t mid">Midtown</i> this week, and <i class="t old">Old Town</i> for sessions abandoned a week or more.</span></div>
+      <div><b>🚦 Read the signs</b>A green pulse means working right now. A yellow <b class="inline">!</b> means a session is waiting for you: the <b class="inline">needs you</b> button visits each one. Drones on the roof are subagents.</div>
+      <div><b>🪙 Collect and level up</b>Every action your agents took is a coin. Click a coin or its tag to collect it. Coins give XP, levels unlock new cars, and 📜 quests change daily.</div>
+      <div><b>🚗 Get around</b>Drag to move, scroll to zoom, right-drag or Q/E to rotate. Click a road to drive there, or a building to drive to it. Use the map in the corner to jump anywhere; press M for the big map.</div>
+      <div><b>🚪 Step inside</b>Drive to a building and go in to watch your agent at work. Click the robots to poke them, and the door to leave. Try clicking your car, too.</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap">
+      <span class="muted" style="font-size:12px">Open this again any time with the <b>?</b> button.</span>
+      <button class="btn-go" id="rules-go">Let's go!</button>
+    </div>
+  </div>
+</div>
 
 <div id="picker" class="modal" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="picker-title">

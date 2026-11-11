@@ -17,11 +17,12 @@ const short = (t, n = 28) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…'
 const statusOf = (s) => (STATUS[s.status] ? s.status : 'closed'); // only known values reach the markup
 
 export class Labels {
-  constructor(root, city, { select, coins }) {
+  constructor(root, city, { select, coins, avoid = () => [] }) {
     this.root = root;
     this.city = city;
     this.select = select;
     this.coins = coins;
+    this.avoid = avoid; // screen boxes ordinary labels keep out of (the minimap)
     this.items = [];
     this.v = new THREE.Vector3();
   }
@@ -157,7 +158,7 @@ export class Labels {
       // a little stickiness stops labels flickering as the camera moves
       cands.push({ it, x, y, box, pri: pri + (it.shown ? 60 : 0), force, dir });
     }
-    const shown = place(cands, [{ l: 0, r: W, t: 0, b: EDGE.top - 8 }]); // keep clear of the top bar
+    const shown = place(cands, [{ l: 0, r: W, t: 0, b: EDGE.top - 8 }, ...this.avoid()]); // keep clear of the top bar and the map
     const on = new Set();
     for (const { c, dy } of shown) { on.add(c.it); this.show(c.it, c.x, c.y + dy); }
     for (const c of cands) if (!on.has(c.it)) this.hide(c.it);
