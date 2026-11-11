@@ -9,7 +9,7 @@ import * as THREE from './three.js';
 import { COLONIES } from './layout.js';
 import { STATUS } from './models.js';
 import { place } from './place.js';
-import { esc, fmtNum } from './util.js';
+import { esc, fmtNum, ago } from './util.js';
 
 const EDGE = { top: 76, side: 18, bottom: 64 };
 const titleOf = (s) => s.title || 'Untitled session';
@@ -84,23 +84,24 @@ export class Labels {
   pinState(rec, dist) {
     const s = rec.s, coins = this.coins(rec);
     const sel = rec === this.city.selected, hov = rec === this.city.hover || rec === this.hoverPin;
-    const need = s.status === 'waiting', live = s.status !== 'closed';
+    const need = s.status === 'waiting', live = s.status !== 'closed', done = !!rec.done;
     const close = dist < 34, mid = dist < 70;
     // up close everything gets a title; further out, only what is worth your attention
-    const full = sel || hov || close || (mid && need);
+    const full = sel || hov || close || (mid && (need || done));
     if (!full && !need && s.status !== 'working' && !coins && !mid) return null;
     if (!full && !live && !coins) return null;
-    let pri = need ? 900 : s.status === 'working' ? 500 : s.status === 'open' ? 300 : 100;
+    let pri = need ? 900 : done ? 850 : s.status === 'working' ? 500 : s.status === 'open' ? 300 : 100;
     pri += Math.min(150, Math.log2(1 + coins) * 15);
     if (hov) pri = 2000;
     if (sel) pri = 3000;
-    return { full, coins, need, sel, hov, pri, force: sel || need };
+    return { full, coins, need, done, sel, hov, pri, force: sel || need || done };
   }
 
   pinHtml(rec, st) {
     const coin = st.coins ? `<span class="coin">🪙 ${fmtNum(st.coins)}</span>` : '';
-    const dot = `<span class="dot ${statusOf(rec.s)}">${st.need ? '!' : ''}</span>`;
-    return st.full ? `${dot}<span class="t">${esc(short(titleOf(rec.s)))}</span>${coin}` : dot + coin;
+    const dot = st.done ? '<span class="dot done">✓</span>' : `<span class="dot ${statusOf(rec.s)}">${st.need ? '!' : ''}</span>`;
+    const when = st.done ? `<span class="when">done ${ago(rec.s.lastActivity)}</span>` : '';
+    return st.full ? `${dot}<span class="t">${esc(short(titleOf(rec.s)))}</span>${when}${coin}` : dot + coin;
   }
 
   update() {
@@ -143,11 +144,12 @@ export class Labels {
         if (v.z > 1 || Math.abs(v.x) > out || Math.abs(v.y) > out) { this.hide(it); continue; }
         x = (v.x + 1) / 2 * W; y = (1 - v.y) / 2 * H;
         if (st) {
-          key = `${statusOf(it.rec.s)}|${st.full}|${st.coins}|${it.rec.s.title}`;
+          key = `${statusOf(it.rec.s)}|${st.full}|${st.coins}|${it.rec.s.title}|${st.done && ago(it.rec.s.lastActivity)}`;
           html = () => this.pinHtml(it.rec, st);
           it.el.classList.toggle('sel', st.sel);
           it.el.classList.toggle('compact', !st.full);
           it.el.classList.toggle('need', st.need);
+          it.el.classList.toggle('done', st.done);
         } else { key = it.content(); html = it.html; }
       }
       if (key !== it.key) { it.key = key; it.el.innerHTML = html(); it.w = it.el.offsetWidth; it.h = it.el.offsetHeight; }

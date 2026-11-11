@@ -107,6 +107,7 @@ The server runs in the background and stops by itself a few minutes after you cl
 **Also:**
 - **📖 Session stories:** every prompt, reply and action, with credentials masked.
 - **📸 Shareable postcards:** your city and stats in one image.
+- **✅ Just-finished highlights:** when a session finishes its turn, its building gets a green beam, you get a toast and a chime, and the tab title counts it. **✅ finished** takes you to it and shows which folder its terminal is in.
 - **❗ Needs-you alerts:** off-screen sessions that are waiting for you point at themselves from the screen edge.
 - **🎓 Built-in how-to-play guide:** opens on your first visit, and any time with **?**.
 
@@ -121,6 +122,7 @@ The server runs in the background and stops by itself a few minutes after you cl
 | Visit a session | click its building or its tag: your car drives over and the card opens; **Go inside** enters the room |
 | Collect coins | click the coin above a building, or **Collect** on its card |
 | Find who needs you | the yellow **❗ needs you** button visits each waiting session in turn |
+| See what just finished | the green **✅ finished** button; the card says which folder its terminal is in |
 | Have fun | poke the robots inside a building; click your car to make it hop |
 | Get help | **?** opens the how-to-play guide |
 
@@ -147,6 +149,7 @@ Coins, XP and quests are kept in your browser only.
 | Building height | how many turns the session ran |
 | Lit windows, a green ripple on the ground | the session is working right now |
 | A bouncing yellow **!** tag, or an arrow at the screen edge | the session is waiting for you |
+| A green beam of light and a **✓ done** tag | the session just finished its turn and Claude Code is still open: check that terminal (the newest one or two you haven't looked at yet) |
 | A spinning gold coin, and its amount on the tag | actions you haven't collected yet |
 | Drones circling the roof | subagents the session dispatched |
 

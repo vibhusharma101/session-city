@@ -8,7 +8,7 @@ const H = 36e5, DAY = 864e5;
 const SESSIONS = [
   ['api-server', 'Add rate limiting to the public API', 'build', 'working', 0.05, 140, 2],
   ['api-server', 'Fix flaky auth tests', 'shell', 'waiting', 0.2, 60, 0],
-  ['api-server', 'Postgres migration for invoices', 'build', 'open', 3, 95, 0],
+  ['api-server', 'Postgres migration for invoices', 'build', 'open', 0.08, 95, 0],
   ['api-server', 'Explain the billing webhook flow', 'research', 'closed', 50, 22, 0],
   ['mobile-app', 'Dark mode for settings screen', 'build', 'working', 0.02, 75, 1],
   ['mobile-app', 'Crash on Android 14 share sheet', 'web', 'closed', 30, 48, 0],
