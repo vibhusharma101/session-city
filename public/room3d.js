@@ -117,7 +117,84 @@ export class Room {
       scene.add(r);
       this.subs.push(r);
     }
+    // every robot can be poked
+    for (const [r, s] of [[this.agent, 1.25], ...this.subs.map((x) => [x, 0.95])]) {
+      Object.assign(r.userData, { scale0: s, react: null, pokes: 0, lastPoke: 0, rOff: 0 });
+      r.traverse((o) => { o.userData.bot = r; });
+      this.hits.push(r);
+    }
     this.state = { lastGroup: null, wanderAt: 0, goalId: 'build', mode: 'idle' };
+  }
+
+  // A robot reacts to being clicked: a jump, a spin, a wave, and if you keep
+  // clicking, a little dance. Returns what it says.
+  poke(bot, s, t) {
+    const u = bot.userData;
+    u.pokes = t - u.lastPoke < 1400 ? u.pokes + 1 : 1;
+    u.lastPoke = t;
+    const kind = u.pokes >= 4 ? 'dance' : ['jump', 'spin', 'wave'][(u.pokes - 1) % 3];
+    u.react = { kind, t0: t, dur: { jump: 700, spin: 800, wave: 1300, dance: 1800 }[kind] };
+    if (u.pokes >= 4) u.pokes = 0;
+    const head = bot.position.clone().setY(1.7 * u.scale0);
+    for (let i = 0; i < (kind === 'dance' ? 14 : 6); i++) {
+      const spark = part(GEO.dot, new THREE.MeshBasicMaterial({ color: ['#ffd166', '#7cf2c8', '#ff8fb1', '#9cc3e6'][i % 4], transparent: true, depthWrite: false }), [0.07, 0.07, 0.07], [0, 0, 0], false);
+      this.fx = this.fx ?? [];
+      this.spawn(spark, head.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, Math.random() * 0.4, (Math.random() - 0.5) * 0.8)), 0.9 + Math.random() * 0.6);
+    }
+    const sub = bot !== this.agent;
+    const lines = kind === 'dance' ? ['Wheee! 🎉', 'Dance break!', 'Okay okay, I\'m dizzy!']
+      : sub ? ['Reporting for duty!', 'I\'m only a subagent!', 'Beep! Back to my task.']
+      : s.status === 'waiting' ? ['Psst… your terminal needs you!', 'I asked you something!', 'Over here! I\'m waiting!']
+      : s.status === 'working' ? ['Busy busy! 🛠️', 'Almost done, promise!', 'Hey, I\'m on a roll!']
+      : s.status === 'open' ? ['Coffee break ☕', 'Ready when you are!', 'Got a new prompt for me?']
+      : ['Zzz… oh! Hi!', 'This session is over. Five more minutes…', 'Wake me for the next one.'];
+    const text = lines[Math.floor(Math.random() * lines.length)];
+    if (sub) { // one line at a time: a new poke replaces what it was saying
+      const old = this.fx.find((f) => f.obj === u.said);
+      if (old) old.age = old.life;
+      u.said = makeLabel(text, 0.22, { bg: 'rgba(255,250,240,.95)', fg: '#3b2f22', font: 800, size: 40, radius: 18 });
+      this.spawn(u.said, head.clone().setY(head.y + 0.35), 1.8);
+    }
+    else this.quip = { text, until: t + 2200 };
+    return { kind, text };
+  }
+
+  // Adds the poke reaction on top of the robot's normal animation (which has
+  // already run this frame, with last frame's spin taken off: see update).
+  react(bot, t) {
+    const u = bot.userData, r = u.react;
+    u.arms[0].rotation.z = 0;
+    if (bot !== this.agent) { // update() doesn't pose subagents' arms, head tilt or eyes
+      u.arms[1].rotation.z = 0;
+      u.head.rotation.z = 0;
+      u.eyes.forEach((e) => { e.scale.y = 0.05; });
+    }
+    let lift = 0, sx = 1, sy = 1;
+    if (r) {
+      const k = Math.min(1, (t - r.t0) / r.dur);
+      const hop = (n, h) => Math.abs(Math.sin(k * Math.PI * n)) * h;
+      if (r.kind === 'jump') {
+        lift = Math.sin(Math.min(1, Math.max(0, (k - 0.15) / 0.85)) * Math.PI) * 0.6;
+        const squash = k < 0.15 ? Math.sin(k / 0.15 * Math.PI) : k > 0.88 ? Math.sin((k - 0.88) / 0.12 * Math.PI) : 0;
+        sy = 1 - squash * 0.22; sx = 1 + squash * 0.12;
+      } else if (r.kind === 'spin') {
+        u.rOff = Math.PI * 2 * (1 - Math.pow(1 - k, 3));
+        lift = hop(1, 0.25);
+      } else if (r.kind === 'wave') {
+        u.arms[1].rotation.z = 2.5 + Math.sin(t / 80) * 0.5;
+        u.head.rotation.z = Math.sin(t / 160) * 0.15;
+      } else {
+        u.rOff = Math.PI * 4 * k;
+        lift = hop(3, 0.4);
+        u.arms[0].rotation.z = -2.4; u.arms[1].rotation.z = 2.4;
+      }
+      u.head.rotation.x = 0; // even a sleeping robot wakes up for a poke
+      u.eyes.forEach((e) => { e.scale.y = 0.02; }); // happy squint
+      if (k >= 1) u.react = null;
+    }
+    bot.rotation.y += u.rOff;
+    bot.position.y = (bot === this.agent ? bot.position.y : 0) + lift;
+    bot.scale.set(u.scale0 * sx, u.scale0 * sy, u.scale0 * sx);
   }
 
   buildRoom(s) {
@@ -340,10 +417,13 @@ export class Room {
   pick(raycaster) {
     const hit = raycaster.intersectObjects(this.hits, true)[0];
     if (!hit) return null;
-    return hit.object.userData.door ? { door: true } : hit.object.userData.station ? { station: hit.object.userData.station } : null;
+    const u = hit.object.userData;
+    return u.door ? { door: true } : u.bot ? { bot: u.bot, main: u.bot === this.agent } : u.station ? { station: u.station } : null;
   }
 
   update(dt, t, s, night) {
+    // take off last frame's poke spin, so turning to face things isn't fighting it
+    for (const bot of [this.agent, ...this.subs]) { bot.rotation.y -= bot.userData.rOff; bot.userData.rOff = 0; }
     // camera: standing in the front corner at eye height, with a slow breathing sway
     this.yaw += (this.yawGoal - this.yaw) * damp(6, dt);
     const sway = Math.sin(t / 2600) * 0.012;
@@ -415,6 +495,7 @@ export class Room {
       ru.arms[1].rotation.x = working ? -1.1 + Math.cos(t / 95 + i) * 0.25 : 0;
       ru.head.rotation.x = s.status === 'closed' ? 0.45 : 0;
     });
+    for (const bot of [this.agent, ...this.subs]) this.react(bot, t);
 
     // props
     const live = s.status === 'working';
@@ -455,7 +536,7 @@ export class Room {
       f.obj.position.y += dt * 0.5;
       f.obj.position.x += Math.sin(f.age * 3) * dt * 0.2;
       f.obj.material.opacity = Math.max(0, 1 - f.age / f.life);
-      if (f.age >= f.life) { this.scene.remove(f.obj); this.fx.splice(i, 1); }
+      if (f.age >= f.life) { this.scene.remove(f.obj); dispose(f.obj); this.fx.splice(i, 1); }
     }
   }
 

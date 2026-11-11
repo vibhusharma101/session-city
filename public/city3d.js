@@ -1,11 +1,11 @@
 // The 3D city: renderer, camera rig, colonies, buildings, your car, coins and effects.
 import * as THREE from './three.js';
 import {
-  TILE, GEO, mat, glowMat, part, dispose, makeBuilding, makeCar, makeCoin, makeLabel, makeGate, makeFountain,
+  TILE, KINDS, GEO, mat, glowMat, part, dispose, makeBuilding, makeCar, makeCoin, makeGate, makeFountain,
 } from './models.js';
 import { findPath, drivable } from './layout.js';
 import { Post } from './post.js';
-import { hash, rng, mix, clamp, damp, Tweens, easeOutBack, easeOutCubic } from './util.js';
+import { hash, rng, mix, shade, clamp, damp, Tweens, easeOutBack } from './util.js';
 
 const SKY = {
   top: '#4f9be0', horizon: '#dcefff',            // day
@@ -17,6 +17,7 @@ const ROAD = { uptown: '#6b7385', midtown: '#7c8494', oldtown: '#978e82' };
 const CURB = { uptown: '#f4ecdc', midtown: '#efe2c4', oldtown: '#b3a790' };
 const LIT = { working: 0.85, waiting: 0.65, open: 0.5, closed: 0.05 };
 const PARK_TOP = 0.16;
+const COIN = 1.3; // coin scale
 
 // A gradient sky dome with a soft sun glow by day, and stars and a moon by night.
 function makeSky() {
@@ -70,6 +71,29 @@ function glowTexture() {
   return tex;
 }
 
+// A tiling speckle texture (grass blades, asphalt grit): near-white, so the
+// material colour tints it.
+function speckle(spread, count, size) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 256, 256);
+  const r = rng(7);
+  for (let i = 0; i < count; i++) {
+    const v = Math.round(255 * (1 - spread + r() * spread * 1.6));
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(r() * 256, r() * 256, size * (0.5 + r()), size * (0.5 + r()));
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  return tex;
+}
+const GRASS_TEX = speckle(0.16, 5000, 2.2);
+const ASPHALT_TEX = speckle(0.12, 9000, 1.4);
+
 // Endless grass with soft patches of lighter and darker green.
 function makeGround() {
   const geo = new THREE.PlaneGeometry(1600, 1600, 200, 200).rotateX(-Math.PI / 2);
@@ -81,10 +105,52 @@ function makeGround() {
     colors.fill(0.93 + n * 0.07, i * 3, i * 3 + 3);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const ground = new THREE.Mesh(geo, mat(GRASS.outside, { flatShading: false }));
+  const map = GRASS_TEX.clone();
+  map.repeat.set(500, 500);
+  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: GRASS.outside, map, roughness: 0.95, vertexColors: true }));
   ground.position.y = -0.01;
   ground.receiveShadow = true;
   return ground;
+}
+
+// Window glass: dark and mirror-like, reflecting the sky by day; each window's
+// instance colour is the light behind it, which glows (and blooms) at night.
+function glassMaterial(glow) {
+  const m = new THREE.MeshStandardMaterial({ color: '#2a3d55', roughness: 0.06, metalness: 0.7, envMapIntensity: 1.6 });
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uGlow = glow;
+    shader.fragmentShader = 'uniform float uGlow;\n' + shader.fragmentShader
+      .replace('#include <color_fragment>', '')
+      .replace('#include <emissivemap_fragment>', '#ifdef USE_COLOR\n totalEmissiveRadiance = vColor.rgb * uGlow;\n#endif');
+  };
+  return m;
+}
+
+// A vertical fade for the "finished" light beam: bright at the roof, gone at the top.
+function beamTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 128, 0, 0);
+  grad.addColorStop(0, 'rgba(255,255,255,.9)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,.35)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 4, 128);
+  return new THREE.CanvasTexture(c);
+}
+
+// A soft dark blot that grounds each building (cheap contact shadow).
+function blotTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 18, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(0,0,0,.55)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
 }
 
 export class City {
@@ -105,10 +171,16 @@ export class City {
 
     this.sky = makeSky();
     scene.add(this.sky);
+    // the sky, pre-filtered, lights and reflects off everything (glass, gold, paint)
+    this.pmrem = new THREE.PMREMGenerator(r);
+    this.envScene = new THREE.Scene();
+    this.envScene.add(new THREE.Mesh(this.sky.geometry, this.sky.material));
+    scene.environmentIntensity = 0.4;
+    this.winGlow = { value: 0 };
 
     // key: a warm, low afternoon sun from the front-left; fill: sky/ground bounce;
     // rim: a cool light from behind that separates buildings from the ground
-    this.hemi = new THREE.HemisphereLight('#d6ecff', '#a3b36e', 1.1);
+    this.hemi = new THREE.HemisphereLight('#d6ecff', '#a3b36e', 0.75);
     this.sun = new THREE.DirectionalLight('#ffe7c2', 2.9);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -124,7 +196,6 @@ export class City {
     this.particles = [];
     this.recs = new Map();
     this.fountains = [];
-    this.labels = [];
     // the pitch eases from a near-top-down map view when zoomed out to a lower,
     // more cinematic angle up close; yaw rests on the diagonals
     this.rig = { target: new THREE.Vector3(), goal: new THREE.Vector3(), yaw: Math.PI / 4, yawGoal: Math.PI / 4, pitch: 0.9, dist: 60, distGoal: 60, follow: false, minDist: 9, maxDist: 160 };
@@ -166,13 +237,12 @@ export class City {
   setLayout(L, carModel, isNew) {
     const first = !this.L;
     this.L = L;
-    if (this.city) { this.scene.remove(this.city); dispose(this.city); }
+    if (this.city) { this.scene.remove(this.city); dispose(this.city); this.beamTex = null; }
     const city = this.city = new THREE.Group();
     this.scene.add(city);
     const prev = this.recs;
     this.hover = null;
     this.recs = new Map();
-    this.labels = [];
     this.fountains = [];
 
     this.buildGround(city, L);
@@ -195,18 +265,23 @@ export class City {
       }
     }
 
-    for (const blk of L.blocks) {
-      const lab = makeLabel(blk.name, 0.85, { bg: 'rgba(255,255,255,.92)', size: 40, font: 800 });
-      lab.position.copy(this.toWorld(blk.bx + blk.B + 0.1, blk.by + blk.B + 0.1, 0.9));
-      city.add(lab);
-      this.labels.push(lab);
-    }
-
-    // buildings; windows and sills are instanced per building and parented to it,
-    // so they follow its bounce, hover and rise animations
+    // buildings; windows, frames and sills are instanced per building and parented
+    // to it, so they follow its bounce, hover and rise animations
     const winGeo = new THREE.PlaneGeometry(0.24, 0.28);
-    const winMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+    const winMat = glassMaterial(this.winGlow);
     const dummy = new THREE.Object3D(), col = new THREE.Color();
+    const blots = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+      map: blotTexture(), transparent: true, depthWrite: false, color: '#203018',
+    }), Math.max(1, L.buildings.length));
+    blots.count = L.buildings.length;
+    blots.renderOrder = 1;
+    city.add(blots);
+    L.buildings.forEach((b, i) => {
+      dummy.position.copy(this.toWorld(b.gx + 0.5, b.gy + 0.5, PARK_TOP + 0.012));
+      dummy.scale.setScalar(3.1);
+      dummy.updateMatrix();
+      blots.setMatrixAt(i, dummy.matrix);
+    });
     for (const b of L.buildings) {
       const m = makeBuilding(b.s, b.colony);
       const pos = this.toWorld(b.gx + 0.5, b.gy + 0.5, PARK_TOP);
@@ -218,31 +293,47 @@ export class City {
         scale: 1, squash: 0, rise: isNew?.(b.s) ? 0 : 1, phase: (hash(b.s.id) % 1000) / 160, smokeT: 0, drones: [],
       };
       const n = Math.max(1, m.windows.length);
+      const old = b.colony === 'oldtown';
       const wins = rec.windows = new THREE.InstancedMesh(winGeo, winMat, n);
+      const frames = new THREE.InstancedMesh(GEO.box, mat('#ffffff', { roughness: 0.5 }), n);
       const sills = new THREE.InstancedMesh(GEO.box, mat('#ffffff'), n);
       sills.castShadow = true;
       const r = rng(hash(b.s.id));
       rec.windowRnd = m.windows.map(() => r());
+      const boarded = old ? m.windows.filter((w, i) => rec.windowRnd[i] < 0.35) : [];
+      const boards = boarded.length ? new THREE.InstancedMesh(GEO.box, mat('#8a6a48'), boarded.length) : null;
+      const frameCol = old ? '#7d776c' : shade(KINDS[b.s.kind].color, -0.45);
+      const at = (w, out, up, sx, sy, sz, ry = w.ry) => {
+        dummy.position.set(w.x + Math.sin(w.ry) * out, w.y + up, w.z + Math.cos(w.ry) * out);
+        dummy.rotation.set(0, ry, 0);
+        dummy.scale.set(sx, sy, sz);
+        dummy.updateMatrix();
+        return dummy.matrix;
+      };
       m.windows.forEach((w, i) => {
-        dummy.position.set(w.x, w.y, w.z);
-        dummy.rotation.set(0, w.ry, 0);
-        dummy.scale.set(1, 1, 1);
-        dummy.updateMatrix();
-        wins.setMatrixAt(i, dummy.matrix);
-        wins.setColorAt(i, col.set('#a9d2ee'));
-        dummy.position.set(w.x + Math.sin(w.ry) * 0.03, w.y - 0.17, w.z + Math.cos(w.ry) * 0.03);
-        dummy.scale.set(0.32, 0.035, 0.07);
-        dummy.updateMatrix();
-        sills.setMatrixAt(i, dummy.matrix);
-        sills.setColorAt(i, col.set(b.colony === 'oldtown' ? '#9c968b' : '#f6f1e6'));
+        wins.setMatrixAt(i, at(w, 0.004, 0, 1, 1, 1));
+        wins.setColorAt(i, col.set('#000000'));
+        frames.setMatrixAt(i, at(w, -0.012, -0.155, 0.3, 0.31, 0.03));
+        frames.setColorAt(i, col.set(frameCol));
+        sills.setMatrixAt(i, at(w, 0.03, -0.17, 0.32, 0.035, 0.07));
+        sills.setColorAt(i, col.set(old ? '#9c968b' : '#f6f1e6'));
       });
-      wins.count = sills.count = m.windows.length;
-      m.group.add(wins, sills);
+      boarded.forEach((w, i) => {
+        dummy.position.set(w.x + Math.sin(w.ry) * 0.02, w.y, w.z + Math.cos(w.ry) * 0.02);
+        dummy.rotation.set(0, w.ry, 0);
+        dummy.rotateZ((rec.windowRnd[i] - 0.17) * 2);
+        dummy.scale.set(0.3, 0.07, 0.02);
+        dummy.updateMatrix();
+        boards.setMatrixAt(i, dummy.matrix);
+      });
+      wins.count = frames.count = sills.count = m.windows.length;
+      m.group.add(frames, wins, sills);
+      if (boards) m.group.add(boards);
       m.group.traverse((o) => { if (o.isMesh) o.userData.rec = rec; });
       for (let i = 0; i < 4; i++) {
         const d = new THREE.Group();
         d.add(part(GEO.box, mat('#5b5f73'), [0.34, 0.05, 0.08], [0, 0, 0]));
-        d.add(part(GEO.sphere, glowMat('#b9a3e3'), [0.1, 0.1, 0.1], [0, -0.05, 0], false));
+        d.add(part(GEO.dot, glowMat('#b9a3e3'), [0.1, 0.1, 0.1], [0, -0.05, 0], false));
         d.visible = false;
         city.add(d);
         rec.drones.push(d);
@@ -294,7 +385,7 @@ export class City {
     // roads
     const roads = [];
     for (let y = 0; y < L.H; y++) for (let x = 0; x < L.W; x++) if (L.tiles[y * L.W + x] === 1) roads.push([x, y]);
-    const road = new THREE.InstancedMesh(GEO.box, mat('#ffffff', { flatShading: false, roughness: 0.95 }), roads.length);
+    const road = new THREE.InstancedMesh(GEO.box, new THREE.MeshStandardMaterial({ map: ASPHALT_TEX.clone(), roughness: 0.92, vertexColors: true }), roads.length);
     road.receiveShadow = true;
     const dummy = new THREE.Object3D(), col = new THREE.Color();
     const colonyOf = (x, y) => { const ci = L.colonyAt[y * L.W + x]; return ci >= 0 ? L.colonies[ci].id : 'midtown'; };
@@ -342,7 +433,9 @@ export class City {
     for (const blk of L.blocks) {
       const c = this.toWorld(blk.bx + blk.B / 2, blk.by + blk.B / 2);
       city.add(part(GEO.box, mat(CURB[blk.colony]), [blk.B * TILE + 0.2, 0.14, blk.B * TILE + 0.2], [c.x, 0, c.z], false));
-      city.add(part(GEO.box, mat(PARK[blk.colony], { flatShading: false }), [blk.B * TILE - 0.25, PARK_TOP, blk.B * TILE - 0.25], [c.x, 0, c.z], false));
+      const lawn = GRASS_TEX.clone();
+      lawn.repeat.setScalar(blk.B * TILE / 3.2);
+      city.add(part(GEO.box, new THREE.MeshStandardMaterial({ color: PARK[blk.colony], map: lawn, roughness: 0.95, vertexColors: true }), [blk.B * TILE - 0.25, PARK_TOP, blk.B * TILE - 0.25], [c.x, 0, c.z], false));
       const r = rng(hash(`f${blk.bx},${blk.by}`));
       const n = blk.colony === 'uptown' ? blk.B * 14 : blk.colony === 'midtown' ? blk.B * 4 : blk.B * 10;
       for (let i = 0; i < n; i++) {
@@ -351,7 +444,7 @@ export class City {
         (blk.colony === 'oldtown' ? weeds : flowers).push([x, y, r()]);
       }
     }
-    const fl = new THREE.InstancedMesh(GEO.blob, mat('#ffffff'), Math.max(1, flowers.length));
+    const fl = new THREE.InstancedMesh(GEO.dot, mat('#ffffff', { roughness: 0.6 }), Math.max(1, flowers.length));
     const palette = ['#ffffff', '#ffd166', '#ef798a', '#c3a6ff', '#ff9f68'];
     flowers.forEach(([x, y, k], i) => {
       dummy.position.copy(this.toWorld(x, y, PARK_TOP + 0.04));
@@ -450,9 +543,10 @@ export class City {
     };
     const leaf = ['#58b64f', '#47a043', '#6fcb5c'];
     inst(GEO.cyl6, mat('#9a6440'), trunks, (d, [p, s]) => { d.position.copy(p); d.rotation.set(0, 0, 0); d.scale.set(0.16 * s, 0.6 * s, 0.16 * s); });
-    inst(GEO.blob, mat('#ffffff'), round, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 0.95 * s, p.z); d.scale.set(1.1 * s, 1.0 * s, 1.1 * s); d.rotation.set(0, k, 0); m.setColorAt(i, col.set(leaf[k])); });
-    inst(GEO.cone8, mat('#ffffff'), cones, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 0.45 * s, p.z); d.scale.set(0.7 * s, 1.5 * s, 0.7 * s); d.rotation.set(0, 0, 0); m.setColorAt(i, col.set(['#3f9a46', '#4aa84e', '#358c3e'][k])); });
-    inst(GEO.cone6, mat('#ffffff'), pines, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 0.4 * s, p.z); d.scale.set(1.0 * s, 1.8 * s, 1.0 * s); d.rotation.set(0, k, 0); m.setColorAt(i, col.set(['#2f8a4a', '#3b9a53', '#2a7a42'][k])); });
+    const foliage = mat('#ffffff', { roughness: 0.9 });
+    inst(GEO.crown, foliage, round, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 1.0 * s, p.z); d.scale.set(1.25 * s, 1.15 * s, 1.25 * s); d.rotation.set(0, k * 2.1 + p.x, 0); m.setColorAt(i, col.set(leaf[k])); });
+    inst(GEO.cone8, foliage, cones, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 0.45 * s, p.z); d.scale.set(0.7 * s, 1.5 * s, 0.7 * s); d.rotation.set(0, 0, 0); m.setColorAt(i, col.set(['#3f9a46', '#4aa84e', '#358c3e'][k])); });
+    inst(GEO.pine, foliage, pines, (d, [p, s, k], m, i) => { d.position.set(p.x, p.y + 0.25 * s, p.z); d.scale.set(1.1 * s, 1.5 * s, 1.1 * s); d.rotation.set(0, k, 0); m.setColorAt(i, col.set(['#2f8a4a', '#3b9a53', '#2a7a42'][k])); });
     inst(GEO.cyl6, mat('#6e5847'), dead, (d, [p, s]) => { d.position.copy(p); d.rotation.set(0, 0, 0); d.scale.set(0.13 * s, 1.1 * s, 0.13 * s); });
     const branches = dead.flatMap(([p, s], i) => [[p, s, 0.7, 0.6 + i], [p, s, -0.8, 2.1 + i]]);
     inst(GEO.cyl6, mat('#6e5847'), branches, (d, [p, s, tilt, rot]) => { d.position.set(p.x, p.y + 0.6 * s, p.z); d.rotation.set(0, rot, tilt); d.scale.set(0.07 * s, 0.6 * s, 0.07 * s); });
@@ -462,7 +556,7 @@ export class City {
     const dummy = new THREE.Object3D();
     const posts = new THREE.InstancedMesh(GEO.cyl6, mat('#4a5160'), L.lamps.length);
     const lit = L.lamps.filter((l) => l.colony !== 'oldtown' || hash(`${l.x},${l.y}`) % 3 === 0);
-    this.bulbs = new THREE.InstancedMesh(GEO.sphere, glowMat('#ffffff'), Math.max(1, lit.length));
+    this.bulbs = new THREE.InstancedMesh(GEO.dot, glowMat('#ffffff'), Math.max(1, lit.length));
     this.bulbs.material = new THREE.MeshBasicMaterial({ color: '#dfe3ea', toneMapped: false });
     posts.castShadow = true;
     L.lamps.forEach((l, i) => {
@@ -523,6 +617,15 @@ export class City {
     return c.path.length;
   }
 
+  // Clicking your car makes it hop, spin a little and honk.
+  hopCar() {
+    const c = this.car;
+    c.hops = (c.hops ?? 0) + 1;
+    c.hop = { t: 0, spin: c.hops % 3 === 0 }; // every third click, a full spin
+    for (let i = 0; i < 6; i++) this.puff(c.obj.position.clone().setY(0.15), '#efe6d6', 0.25);
+    this.events.honk?.();
+  }
+
   updateCar(dt) {
     const c = this.car;
     if (!c.obj) return;
@@ -559,6 +662,14 @@ export class City {
     for (const w of wheels) w.rotation.z -= c.speed * TILE * dt / 0.15;
     body.rotation.z = clamp(-accel * 0.004, -0.06, 0.06);
     body.position.y = c.speed > 0.1 ? Math.abs(Math.sin(performance.now() / 70)) * 0.02 : 0;
+    body.rotation.y = 0;
+    if (c.hop) {
+      c.hop.t += dt;
+      const k = Math.min(1, c.hop.t / 0.6);
+      body.position.y += Math.sin(k * Math.PI) * 0.5;
+      body.rotation.y = c.hop.spin ? k * Math.PI * 2 : Math.sin(k * Math.PI * 3) * 0.25 * (1 - k);
+      if (k >= 1) c.hop = null;
+    }
   }
 
   // ---------- camera ----------
@@ -656,6 +767,7 @@ export class City {
     const coins = [...this.recs.values()].filter((r) => r.coin?.visible).map((r) => r.coin.userData.hit);
     const hitCoin = this.raycaster.intersectObjects(coins, false)[0];
     if (hitCoin) return { coin: hitCoin.object.userData.coinFor };
+    if (this.car.obj && this.raycaster.intersectObject(this.car.obj, true).length) return { car: true };
     const hit = this.raycaster.intersectObjects(this.city ? this.city.children.filter((o) => o.isGroup) : [], true)
       .find((h) => h.object.userData.rec);
     if (hit) return { rec: hit.object.userData.rec };
@@ -714,7 +826,7 @@ export class City {
       }
       const p = this.pick(e.clientX, e.clientY);
       this.setHover(p.rec ?? p.coin ?? null, e, !!p.coin);
-      canvas.classList.toggle('pointing', !!(p.rec || p.coin || p.road));
+      canvas.classList.toggle('pointing', !!(p.rec || p.coin || p.road || p.car));
     });
     const end = (e) => {
       pointers.delete(e.pointerId);
@@ -726,6 +838,7 @@ export class City {
       if (!this.active || !d || d.moved || d.button !== 0 || e.type === 'pointercancel') return;
       const p = this.pick(e.clientX, e.clientY);
       if (p.coin) this.events.coin(p.coin);
+      else if (p.car) this.hopCar();
       else if (p.rec) this.events.select(p.rec);
       else if (p.road) { this.events.ground?.(p.tile); this.driveTo(p.tile); this.marker(p.tile); }
     };
@@ -768,23 +881,39 @@ export class City {
     rec.pending = amount;
     if (amount > 0 && !rec.coin) {
       const coin = makeCoin();
-      coin.scale.setScalar(1.7);
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+      coin.scale.setScalar(COIN);
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.75, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
       hit.userData.coinFor = rec;
       coin.add(hit);
       coin.userData.hit = hit;
       this.city.add(coin);
       rec.coin = coin;
     }
-    if (rec.coin) {
-      rec.coin.visible = amount > 0;
-      if (rec.coinLabel) { rec.coin.remove(rec.coinLabel); dispose(rec.coinLabel); rec.coinLabel = null; } // live amounts change every poll
-      if (amount > 0) {
-        rec.coinLabel = makeLabel('+' + (amount >= 1000 ? (amount / 1000).toFixed(1) + 'k' : amount), 0.38, { bg: '#fff7da', fg: '#8a5a00', font: 800, size: 40, border: '#f0c24a' });
-        rec.coinLabel.position.set(0, 0.68, 0);
-        rec.coin.add(rec.coinLabel);
+    if (rec.coin) rec.coin.visible = amount > 0; // the amount is shown on the building's label
+  }
+
+  // Sessions that just finished get a beam of light from the roof and a ring
+  // on the ground, so you can spot them from anywhere in the city.
+  setDone(ids) {
+    for (const rec of this.recs.values()) {
+      const on = ids.has(rec.s.id);
+      if (on && !rec.beam) {
+        this.beamTex ??= beamTexture();
+        rec.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.9, 1, 32, 1, true).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({
+          map: this.beamTex, color: new THREE.Color('#4dff96').multiplyScalar(1.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+        }));
+        rec.beam.scale.set(1, 9, 1);
+        rec.doneRing = new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color: '#3fe08a', transparent: true, depthWrite: false }));
+        this.city.add(rec.beam, rec.doneRing);
       }
+      if (rec.beam) rec.beam.visible = rec.doneRing.visible = on;
+      rec.done = on;
     }
+  }
+
+  // Where a building's label pins to: just above its coin, or its roof.
+  labelAnchor(rec, out = new THREE.Vector3()) {
+    return out.copy(rec.group.position).setY((rec.top ?? rec.height) + (rec.coin?.visible ? 1.75 : 0.35));
   }
 
   collectFx(rec) {
@@ -793,7 +922,7 @@ export class City {
     for (let i = 0; i < 18; i++) this.sparkle(pos, ['#ffd166', '#fff1b0', '#f6c445'][i % 3]);
     const screen = this.project(pos);
     const coin = rec.coin;
-    this.tweens.add(0.25, (k) => coin.scale.setScalar(1.7 * (1 + k * 0.6)), undefined, () => { coin.visible = false; coin.scale.setScalar(1.7); });
+    this.tweens.add(0.25, (k) => coin.scale.setScalar(COIN * (1 + k * 0.6)), undefined, () => { coin.visible = false; coin.scale.setScalar(COIN); });
     rec.pending = 0;
     return screen;
   }
@@ -825,7 +954,7 @@ export class City {
     this.tweens.add(0.6, (k) => { ring.scale.setScalar(0.3 + k * 0.9); ring.material.opacity = 1 - k; }, undefined, () => { this.scene.remove(ring); ring.material.dispose(); });
   }
 
-  particle(pos, { color, size = 0.2, life = 1, v = new THREE.Vector3(), g = 0, grow = 0, spin = false, geo = GEO.sphere, opacity = 1 }) {
+  particle(pos, { color, size = 0.2, life = 1, v = new THREE.Vector3(), g = 0, grow = 0, spin = false, geo = GEO.dot, opacity = 1 }) {
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
     m.position.copy(pos);
     m.scale.setScalar(size);
@@ -864,7 +993,7 @@ export class City {
     u.uNight.value = n;
     this.scene.fog.color.copy(u.uHorizon.value);
     // at night the "sun" becomes cool moonlight and the city lights carry the scene
-    this.hemi.intensity = 1.1 - n * 0.6;
+    this.hemi.intensity = 0.75 - n * 0.4;
     this.hemi.color.set(mix('#d6ecff', '#aab4d4', n));
     this.hemi.groundColor.set(mix('#a3b36e', '#4a4f3a', n));
     this.sun.intensity = 2.9 - n * 2.2;
@@ -872,7 +1001,19 @@ export class City {
     this.rim.intensity = 0.7 + n * 0.3;
     this.renderer.toneMappingExposure = 1.0;
     if (this.pools) this.pools.material.opacity = n * 0.6;
-    if (this.bulbs) this.bulbs.material.color.set(n > 0.3 ? '#ffd98a' : '#e8ebf0');
+    if (this.bulbs) this.bulbs.material.color.set(n > 0.3 ? '#ffd98a' : '#e8ebf0').multiplyScalar(1 + n * 1.5);
+    this.winGlow.value = 0.35 + n * 2.4;
+    // night lights bloom; by day only the brightest glints do
+    const pu = this.post.uniforms;
+    pu.uBloom.value = 0.25 + n * 0.75;
+    pu.uThreshold.value = 1.1 - n * 0.35;
+    // re-light the reflections when the sky has changed enough to notice
+    if (this.envNight === undefined || Math.abs(this.envNight - n) > 0.04) {
+      this.envNight = n;
+      this.envTarget?.dispose();
+      this.envTarget = this.pmrem.fromScene(this.envScene, 0.02, 1, 1000);
+      this.scene.environment = this.envTarget.texture;
+    }
   }
 
   updateWindows(t) {
@@ -881,12 +1022,12 @@ export class City {
       const s = rec.s, wins = rec.windows;
       rec.windowRnd.forEach((r, i) => {
         let c;
-        if (rec.colony === 'oldtown') {
-          c = r < 0.35 ? '#8a6a48' : r < 0.55 ? '#2b2f38' : n > 0.4 ? '#1d2233' : '#8fa0a8';
-        } else {
+        // the colour is the light behind the glass; black leaves plain reflective glass
+        if (rec.colony === 'oldtown') c = '#000000';
+        else {
           const lit = r < LIT[s.status] * (n > 0.3 ? 1 : 0.5);
           const flicker = s.status === 'working' && Math.sin(t / 500 + r * 60) > 0.92;
-          c = lit && !flicker ? (n > 0.3 ? '#ffd27a' : '#fff1c4') : n > 0.4 ? '#26324f' : '#a9d2ee';
+          c = lit && !flicker ? (r < 0.15 ? '#cfe4ff' : '#ffc96b') : '#000000';
         }
         wins.setColorAt(i, col.set(c));
       });
@@ -914,21 +1055,12 @@ export class City {
       rec.scale += (target - rec.scale) * damp(14, dt);
       const sx = rec.scale * (1 - rec.squash * 0.5), sy = rec.scale * (1 + rec.squash) * Math.max(0.001, rec.rise);
       rec.group.scale.set(sx, sy, sx);
-      const top = rec.group.position.y + (rec.height - PARK_TOP) * sy;
+      const top = rec.top = rec.group.position.y + (rec.height - PARK_TOP) * sy;
 
       if (rec.coin?.visible) {
-        rec.coin.position.set(rec.group.position.x, top + 1.4 + Math.sin(t / 400 + rec.phase) * 0.15, rec.group.position.z);
+        rec.coin.position.set(rec.group.position.x, top + 1.0 + Math.sin(t / 400 + rec.phase) * 0.12, rec.group.position.z);
         rec.coin.rotation.y = t / 500 + rec.phase;
       }
-      // a bouncing "!" when the session needs you
-      if (s.status === 'waiting') {
-        if (!rec.alert) {
-          rec.alert = makeLabel('!', 0.9, { bg: '#ffd166', fg: '#5a3d00', font: 900, size: 60, pad: 18, border: '#ffffff' });
-          this.city.add(rec.alert);
-        }
-        rec.alert.visible = true;
-        rec.alert.position.set(rec.group.position.x, top + (rec.coin?.visible ? 2.3 : 1.2) + Math.abs(Math.sin(t / 260)) * 0.35, rec.group.position.z);
-      } else if (rec.alert) rec.alert.visible = false;
       // working: a ripple on the ground
       if (s.status === 'working') {
         if (!rec.pulse) {
@@ -941,6 +1073,16 @@ export class City {
         rec.pulse.scale.setScalar(0.9 + k * 1.2);
         rec.pulse.material.opacity = 0.8 * (1 - k);
       } else if (rec.pulse) rec.pulse.visible = false;
+
+      if (rec.done && rec.beam) {
+        rec.beam.position.copy(rec.group.position).setY(top - 0.2);
+        rec.beam.material.opacity = 0.8 + Math.sin(t / 350) * 0.2;
+        rec.beam.rotation.y = t / 2000;
+        const k = (t / 1600 + 0.5) % 1;
+        rec.doneRing.position.copy(rec.group.position).setY(PARK_TOP + 0.05);
+        rec.doneRing.scale.setScalar(1.2 + k * 1.6);
+        rec.doneRing.material.opacity = 0.9 * (1 - k);
+      }
 
       if (rec.chimney && live) {
         rec.smokeT -= dt;
@@ -973,8 +1115,6 @@ export class City {
         ring.scale.setScalar(k * (1.15 + Math.sin(t / 250) * 0.04));
       }
     }
-    const showLabels = this.rig.dist < 90;
-    for (const l of this.labels) l.visible = showLabels;
   }
 
   render() { this.post.render(this.scene, this.camera); }

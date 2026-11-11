@@ -45,5 +45,7 @@ export const sfx = {
   whoosh: () => tone(vary(300), { dur: 0.3, type: 'sine', vol: 0.06, slide: 0.4 }),
   quest: () => [523, 659, 784].forEach((f, i) => tone(f, { at: i * 0.09, dur: 0.18, type: 'triangle', vol: 0.1 })),
   levelUp: () => [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, { at: i * 0.1, dur: 0.3, type: 'square', vol: 0.06 })),
+  boing: () => tone(vary(260), { dur: 0.22, type: 'square', vol: 0.05, slide: 2.4 }),
+  beep: () => { tone(vary(880), { dur: 0.07, type: 'square', vol: 0.04 }); tone(vary(1175), { at: 0.09, dur: 0.09, type: 'square', vol: 0.04 }); },
   build: () => [196, 247, 294].forEach((f, i) => tone(f, { at: i * 0.12, dur: 0.12, type: 'square', vol: 0.05 })),
 };

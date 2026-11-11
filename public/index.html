@@ -161,8 +161,87 @@
   #empty { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; z-index: 4; }
   #empty > div { padding: 24px; max-width: 420px; pointer-events: auto; }
 
+  /* map labels over the city (see labels.js): placed by script, faded in and out */
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+  .lb { position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .2s ease; will-change: transform; }
+  .lb > * { pointer-events: none; }
+  .lb.on { opacity: 1; pointer-events: auto; cursor: pointer; }
+  .lb-colony { cursor: default !important; pointer-events: none !important; translate: -50% -50%; text-align: center; color: #fff; font-weight: 900; font-size: 26px;
+    letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(30, 40, 20, .35), 0 0 22px rgba(20, 30, 10, .45); }
+  .lb-colony small { display: block; font-size: 11px; letter-spacing: .1em; font-weight: 800; opacity: .92; }
+  .lb-district { translate: -50% -50%; text-align: center; padding: 5px 12px 6px; border-radius: 12px; font-weight: 900; font-size: 14px; color: var(--ink);
+    background: rgba(255, 250, 240, .95); border: 2px solid var(--panel-edge); box-shadow: 0 3px 0 rgba(90, 60, 20, .16), 0 8px 18px rgba(40, 30, 10, .2); }
+  .lb-district small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .lb-district i { font-style: normal; }
+  .lb-district .live { color: #2f9a4f; }
+  .lb-district .need { color: #b77a00; }
+  .lb-pin { translate: -50% calc(-100% - 8px); display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 5px; border-radius: 999px; font-weight: 800; font-size: 12.5px;
+    color: var(--ink); background: #fffaf0; border: 2px solid var(--panel-edge); box-shadow: 0 2px 0 rgba(90, 60, 20, .16), 0 6px 14px rgba(40, 30, 10, .22); }
+  .lb-pin::after { content: ''; position: absolute; left: 50%; bottom: -8px; width: 2px; height: 7px; margin-left: -1px; background: var(--panel-edge); }
+  .lb-pin .t { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .lb-pin.compact { padding: 3px; gap: 4px; }
+  .lb-pin.compact .coin { margin-right: 2px; }
+  .lb-pin.need { background: #ffd166; border-color: #e0a100; animation: nudge 1.1s ease-in-out infinite; }
+  .lb-pin.need::after { background: #e0a100; }
+  .lb-pin.sel { border-color: #ffb703; box-shadow: 0 0 0 3px rgba(255, 183, 3, .45), 0 6px 14px rgba(40, 30, 10, .22); }
+  .lb-pin:hover { filter: brightness(1.04); }
+  .lb .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 900; color: #fff;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .08); }
+  .lb .dot.working { background: #3fbf63; animation: live 1.6s ease-out infinite; }
+  .lb .dot.waiting { background: #e08a00; }
+  .lb .dot.open { background: #5aa9e6; }
+  .lb .dot.closed { background: #b3a994; }
+  .lb .coin { padding: 1px 7px; border-radius: 999px; background: #fff1c4; color: #8a5a00; border: 1.5px solid #f0c24a; font-size: 11.5px; font-weight: 900; }
+  .lb-edge { translate: -50% -50%; display: flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; border-radius: 999px; font-weight: 800; font-size: 12.5px;
+    background: #ffd166; border: 2px solid #e0a100; color: #4a3300; box-shadow: var(--shadow); }
+  .lb-edge .arrow { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
+  .lb-edge .arrow::before { content: ''; position: absolute; left: 0; top: -8px; border: 8px solid transparent; border-left: 11px solid #e0a100;
+    transform: translateX(var(--reach, 0)); }
+  @keyframes live { 0% { box-shadow: 0 0 0 0 rgba(63, 191, 99, .6); } 100% { box-shadow: 0 0 0 9px rgba(63, 191, 99, 0); } }
+  @keyframes nudge { 50% { translate: -50% calc(-100% - 13px); } }
+  body.in-room #labels, body.in-room #minimap { display: none !important; }
+
+  /* the map: a round radar in the corner, or the big map */
+  #minimap { position: fixed; right: 14px; bottom: 14px; z-index: 4; width: 196px; padding: 8px; border-radius: 22px; transition: width .25s ease, height .25s ease; }
+  #minimap canvas { display: block; width: 180px; height: 180px; border-radius: 50%; cursor: crosshair; box-shadow: inset 0 0 0 3px #fff, 0 0 0 2px var(--panel-edge); }
+  #minimap .expand { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; font-size: 15px; }
+  #minimap .towns { display: flex; gap: 4px; margin-top: 8px; }
+  #minimap .towns button { flex: 1; padding: 4px 0; font-size: 11px; border-radius: 10px; }
+  #minimap.big { right: 50%; bottom: 50%; transform: translate(50%, 50%); width: min(86vmin, 760px); z-index: 15; box-shadow: 0 0 0 100vmax rgba(30, 20, 5, .45), var(--shadow); }
+  #minimap.big canvas { width: calc(min(86vmin, 760px) - 16px); height: calc(min(86vmin, 760px) - 16px); border-radius: 16px; }
+  #minimap.big .expand { top: 14px; right: 14px; }
+
+  #done { background: #3fd07f; border-color: #1f9a55; color: #0d3d22; box-shadow: 0 3px 0 #1f9a55; font-weight: 900; animation: pop 1.8s ease-in-out infinite; }
+  .card .finished { background: #dcf8e7; color: #1d5e37; border-radius: 12px; padding: 8px 10px; font-size: 12.5px; margin: 0 0 10px; }
+  .card .finished code { background: rgba(255,255,255,.7); padding: 1px 5px; border-radius: 5px; font-size: 12px; word-break: break-all; }
+  .lb-pin.done { background: #dcf8e7; border-color: #3fd07f; }
+  .lb-pin.done::after { background: #3fd07f; }
+  .lb .dot.done { background: #18c46a; animation: live 1.6s ease-out infinite; }
+  .lb-pin .when { font-weight: 700; font-size: 11px; color: #1f9a55; }
+
+  /* the session story, over the game */
+  .story-sheet { width: min(940px, 100%); height: min(88vh, 960px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .story-head { display: flex; align-items: center; gap: 12px; padding: 12px 60px 12px 18px; border-bottom: 2px solid var(--panel-edge); }
+  .story-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+  .story-head a { font-weight: 700; font-size: 13px; color: var(--accent-dark); white-space: nowrap; }
+  .story-head .x { top: 10px; }
+  #story-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+
+  /* how to play */
+  .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rules > div { background: var(--soft); border-radius: 14px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
+  .rules > div > b:first-child { display: block; font-size: 14px; margin-bottom: 3px; }
+  .rules .inline { display: inline; }
+  .rules i.t { font-style: normal; font-weight: 800; padding: 0 6px; border-radius: 6px; }
+  .rules .up { background: #fff1c4; color: #8a6200; }
+  .rules .mid { background: #e3f1ff; color: #2c5d8a; }
+  .rules .old { background: #e9e2d6; color: #6d5d48; }
+  @media (prefers-reduced-motion: reduce) { .lb-pin.need, .lb .dot.working { animation: none; } }
+
   @media (max-width: 760px) {
     .stats, #key, .profile .meta { display: none; }
+    #minimap:not(.big) { width: 128px; } #minimap:not(.big) canvas { width: 112px; height: 112px; } #minimap:not(.big) .towns { display: none; }
+    .rules { grid-template-columns: 1fr; }
     #hud { top: auto; bottom: 0; width: 100%; height: 45%; border-left: 0; border-top: 2px solid var(--panel-edge); border-radius: 18px 18px 0 0; }
     #quests { left: 12px; right: 12px; width: auto; }
     .looks { grid-template-columns: repeat(2, 1fr); }
@@ -171,6 +250,7 @@
 </head>
 <body>
 <canvas id="city"></canvas>
+<div id="labels"></div>
 
 <div class="top">
   <div class="profile panel">
@@ -183,6 +263,7 @@
   <div class="coins panel" id="coins" title="Coins: one for every action your agents took"><span class="coin-icon">$</span><span id="coin-n">0</span></div>
   <div class="stats panel" id="stats">Loading…</div>
   <button id="needs" hidden></button>
+  <button id="done" hidden></button>
   <div class="spacer"></div>
   <div class="tools">
     <button id="quests-btn" class="btn-gold">📜 Quests<span class="badge" id="quest-badge" hidden>0</span></button>
@@ -198,6 +279,7 @@
     <button id="sky" class="icon" title="Day / night"></button>
     <button id="me" class="icon" title="Your car" aria-label="Choose your car">🚗</button>
     <button id="mute" class="icon" title="Sound" aria-label="Toggle sound">🔊</button>
+    <button id="help" class="icon" title="How to play (?)" aria-label="How to play">?</button>
     <button id="share-btn" class="btn-accent">Share</button>
   </div>
 </div>
@@ -224,6 +306,34 @@
 
 <aside id="hud" hidden aria-live="polite"></aside>
 
+<div id="minimap" class="panel">
+  <canvas aria-label="Map of your city. Click to go there."></canvas>
+  <button class="expand icon" title="Open the big map (M)" aria-label="Toggle the big map">⤢</button>
+  <div class="towns">
+    <button data-colony="uptown">Uptown</button><button data-colony="midtown">Midtown</button><button data-colony="oldtown">Old Town</button>
+  </div>
+</div>
+
+<div id="rules" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <button class="x" id="rules-x" aria-label="Close">✕</button>
+    <h2 id="rules-title">How to play Session City</h2>
+    <p class="muted" style="margin:0 0 14px">Your Claude Code sessions, rebuilt as a little city. Everything stays on this machine.</p>
+    <div class="rules">
+      <div><b>🏙️ Every session is a building</b>Projects are city blocks. The taller the tower, the longer the session ran. The roof shows the kind of work: a crane for edits, a dome for web, a chimney for commands.</div>
+      <div><b>🗺️ Three towns</b><span><i class="t up">Uptown</i> live or used today, <i class="t mid">Midtown</i> this week, and <i class="t old">Old Town</i> for sessions abandoned a week or more.</span></div>
+      <div><b>🚦 Read the signs</b>A green pulse means working right now. A yellow <b class="inline">!</b> means a session is waiting for you: the <b class="inline">needs you</b> button visits each one. A green beam means a session just finished its turn: <b class="inline">✅ finished</b> takes you to it and tells you which folder its terminal is in.</div>
+      <div><b>🪙 Collect and level up</b>Every action your agents took is a coin. Click a coin or its tag to collect it. Coins give XP, levels unlock new cars, and 📜 quests change daily.</div>
+      <div><b>🚗 Get around</b>Drag to move, scroll to zoom, right-drag or Q/E to rotate. Click a road to drive there, or a building to drive to it. Use the map in the corner to jump anywhere; press M for the big map.</div>
+      <div><b>🚪 Step inside</b>Drive to a building and go in to watch your agent at work. Click the robots to poke them, and the door to leave. Try clicking your car, too.</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap">
+      <span class="muted" style="font-size:12px">Open this again any time with the <b>?</b> button.</span>
+      <button class="btn-go" id="rules-go">Let's go!</button>
+    </div>
+  </div>
+</div>
+
 <div id="picker" class="modal" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="picker-title">
     <button class="x" id="picker-x" aria-label="Close">✕</button>
@@ -233,6 +343,17 @@
   </div>
 </div>
 <div id="share" class="modal" hidden></div>
+<div id="story" class="modal" hidden>
+  <div class="sheet story-sheet" role="dialog" aria-modal="true" aria-labelledby="story-title">
+    <div class="story-head">
+      <span class="muted" style="font-weight:800">📖 Story</span>
+      <b id="story-title"></b>
+      <a id="story-open" target="_blank" rel="noopener">Open in a new tab ↗</a>
+      <button class="x" id="story-x" aria-label="Close">✕</button>
+    </div>
+    <iframe id="story-frame" title="Session story"></iframe>
+  </div>
+</div>
 <div id="loading">Building your city…</div>
 
 <script type="module" src="/app.js"></script>

@@ -8,9 +8,13 @@ import { sfx } from './sfx.js';
 import { renderPostcard, cityStats, openShare } from './share.js';
 import { esc, fmtNum, ago, span, store } from './util.js';
 import { demoCity, demoActivity } from './demo.js';
+import { Labels } from './labels.js';
+import { Minimap } from './minimap.js';
+import { finished, justFinished, pruneSeen } from './done.js';
 
 // ?demo shows a made-up city instead of this machine's sessions.
 const DEMO = new URLSearchParams(location.search).has('demo');
+const BUSY = new URLSearchParams(location.search).get('demo') === 'busy';
 if (DEMO) store.ns = 'demo:';
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +35,9 @@ const state = {
   loaded: false,
   enterOnArrive: null,
   hoverId: null,
+  doneSeen: store.json('sc.done', {}), // session id → the lastActivity you had seen it finish at
+  statuses: null,                      // last poll's status per session, to catch ones finishing live
+  done: [],
 };
 
 const city = new City(canvas, {
@@ -57,8 +64,12 @@ const city = new City(canvas, {
   },
   drove: (n) => questsDone(progress(game, 'drive', n)),
   ground() { sfx.click(); closeCard(); },
+  honk: () => sfx.honk(),
 });
 city.active = true;
+const minimap = new Minimap($('minimap'), city, { select: (rec) => selectBuilding(rec) });
+const labels = new Labels($('labels'), city, { select: (rec) => selectBuilding(rec), coins: (rec) => Math.max(0, rec.pending),
+  avoid: () => { const r = $('minimap').getBoundingClientRect(); return [{ l: r.left, r: r.right, t: r.top, b: r.bottom }]; } });
 if (new URLSearchParams(location.search).has('debug')) window.sc = { city, game, state }; // for poking at it from devtools
 
 // ---------- data ----------
@@ -81,6 +92,8 @@ function rebuild() {
     for (const s of fresh) { toast(`🏗️ New building: ${s.title || 'a new session'}`); sfx.build(); }
     for (const d of ds) for (const s of d.list) state.seen.add(s.id);
     store.setJson('sc.seen', [...state.seen]);
+    labels.build();
+    minimap.build();
   } else {
     for (const rec of city.recs.values()) rec.s = rec.b.s = findSession(rec.s.id) ?? rec.s;
   }
@@ -90,7 +103,7 @@ function rebuild() {
 
 async function load() {
   try {
-    const data = DEMO ? demoCity() : await (await fetch('/api/city', { cache: 'no-store' })).json();
+    const data = DEMO ? demoCity(BUSY) : await (await fetch('/api/city', { cache: 'no-store' })).json();
     if (data.error) throw new Error(data.error);
     state.data = data;
   } catch (e) {
@@ -98,6 +111,7 @@ async function load() {
     return;
   }
   rebuild();
+  updateFinished();
   quests(game, allSessions());
   renderTop();
   if (city.selected && !card.hidden) renderCard();
@@ -109,7 +123,8 @@ async function load() {
     state.loaded = true;
     $('loading').style.opacity = 0;
     setTimeout(() => $('loading').remove(), 500);
-    if (!store.get('sc.car') && !DEMO) setTimeout(openPicker, 1400);
+    if (!store.get('sc.rules')) setTimeout(openRules, 900);
+    else if (!store.get('sc.car') && !DEMO) setTimeout(openPicker, 1400);
   }
 }
 
@@ -155,6 +170,7 @@ function toast(text, big = false) {
 // ---------- the building card ----------
 function selectBuilding(rec) {
   sfx.click();
+  markSeen(rec.s);
   city.bounce(rec);
   city.selected = rec;
   state.enterOnArrive = null;
@@ -182,6 +198,7 @@ function renderCard() {
       <span class="chip">${esc(rec.b.district)}</span>
       <span class="chip">${ago(s.lastActivity)}</span>
     </div>
+    ${s.status === 'open' ? `<div class="finished">✅ Finished its turn ${ago(s.lastActivity)}. Claude Code is waiting in the terminal at <code>${esc(s.cwd || s.project)}</code>${s.branch ? ` on <b>${esc(s.branch)}</b>` : ''}.</div>` : ''}
     <div class="nums">
       <div class="num"><b>${s.prompts}</b><span>prompts</span></div>
       <div class="num"><b>${fmtNum(actionsOf(s))}</b><span>actions</span></div>
@@ -202,7 +219,7 @@ function renderCard() {
     city.driveTo(rec);
     renderCard();
   };
-  $('card-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('card-story')?.addEventListener('click', (e) => openStory(e, s));
 }
 
 function closeCard() {
@@ -300,6 +317,7 @@ function transition(mid) {
 
 function enter(rec) {
   sfx.door();
+  markSeen(rec.s);
   questsDone(visited(game, rec.s, rec.colony));
   transition(() => {
     state.scene = 'room';
@@ -313,6 +331,7 @@ function enter(rec) {
     card.hidden = true;
     $('quests').hidden = true;
     document.body.classList.add('in-room');
+    labels.setVisible(false);
     renderHud();
     hud.hidden = false;
     bubble.hidden = false;
@@ -331,6 +350,7 @@ function leave() {
     bubble.hidden = true;
     tip.hidden = true;
     document.body.classList.remove('in-room');
+    labels.setVisible(true);
     if (city.selected) renderCard();
   });
 }
@@ -365,7 +385,7 @@ function renderHud() {
       <button id="copy">Copy resume command</button>
     </details>`;
   $('leave').onclick = leave;
-  $('hud-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('hud-story')?.addEventListener('click', (e) => openStory(e, s));
   $('copy').onclick = (e) => navigator.clipboard?.writeText(resume).then(() => { e.target.textContent = 'Copied'; });
   renderFeed();
 }
@@ -378,7 +398,28 @@ function renderFeed() {
     : '<li class="muted">Loading…</li>';
 }
 
+// The story opens over the game, so you stay in your city. Ctrl/Cmd/Shift-click
+// still opens it in its own tab.
+function openStory(e, s) {
+  questsDone(progress(game, 'story', 1));
+  if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+  e.preventDefault();
+  sfx.click();
+  const url = e.currentTarget.href;
+  $('story-title').textContent = s.title || 'Untitled session';
+  $('story-open').href = url;
+  $('story-frame').src = url;
+  $('story').hidden = false;
+  $('story-x').focus();
+}
+function closeStory() {
+  $('story').hidden = true;
+  $('story-frame').src = 'about:blank';
+}
+
 function bubbleText(s) {
+  const q = state.room?.quip;
+  if (q && performance.now() < q.until) return q.text;
   if (s.status === 'waiting') return 'I need you! Check your terminal.';
   if (s.status === 'open') return 'Coffee break. Ready for your next prompt.';
   if (s.status === 'closed') return 'Zzz… this session is closed.';
@@ -419,6 +460,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (!hit || e.pointerType !== 'mouse') { tip.hidden = true; return; }
   const s = state.roomSession;
   tip.innerHTML = hit.door ? '<b>Exit</b><span class="muted">Back to the city</span>'
+    : hit.bot ? `<b>${hit.main ? 'Your agent' : 'A subagent'}</b><span class="muted">Click to poke it</span>`
     : hit.station.id === 'chat' ? '<b>Coffee machine</b><span class="muted">Where your agent waits for your next prompt</span>'
     : `<b>${hit.station.label}</b><span class="muted">${(s.groups?.[hit.station.id] || 0).toLocaleString()} ${hit.station.unit}</span>`;
   tip.hidden = false;
@@ -429,7 +471,13 @@ canvas.addEventListener('pointerup', (e) => {
   if (state.scene !== 'room' || !state.room) return;
   const d = roomDrag;
   roomDrag = null;
-  if (d && !d.moved && roomPick(e)?.door) leave();
+  if (!d || d.moved) return;
+  const hit = roomPick(e);
+  if (hit?.door) leave();
+  else if (hit?.bot) {
+    const { kind } = state.room.poke(hit.bot, state.roomSession, performance.now());
+    (kind === 'dance' ? sfx.quest : kind === 'spin' ? sfx.beep : sfx.boing)();
+  }
 });
 
 // ---------- sky ----------
@@ -469,6 +517,8 @@ function frame(t) {
     city.setNight(n);
     city.update(dt, t);
     city.render();
+    labels.update();
+    minimap.update(t);
   }
   requestAnimationFrame(frame);
 }
@@ -539,14 +589,79 @@ $('sky').onclick = () => {
   renderSkyButton();
 };
 $('me').onclick = openPicker;
+$('help').onclick = () => { sfx.click(); openRules(); };
+$('rules-x').onclick = closeRules;
+$('story-x').onclick = closeStory;
+$('story').onclick = (e) => { if (e.target === $('story')) closeStory(); };
+// Escape pressed while reading (inside the frame) closes the story too
+$('story-frame').addEventListener('load', () => {
+  try {
+    const win = $('story-frame').contentWindow;
+    win.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeStory(); });
+    // the page's own "back to the city" link would load a second city inside the frame
+    for (const link of win.document.querySelectorAll('a[href="/"]')) link.addEventListener('click', (e) => { e.preventDefault(); closeStory(); });
+  } catch { /* not same-origin */ }
+});
+$('rules-go').onclick = closeRules;
+$('rules').onclick = (e) => { if (e.target === $('rules')) closeRules(); };
+$('minimap').querySelector('.expand').onclick = () => { sfx.click(); minimap.toggleBig(); };
+document.querySelectorAll('#minimap [data-colony]').forEach((b) => { b.onclick = () => { sfx.click(); city.fit(false, b.dataset.colony); }; });
 $('picker-x').onclick = closePicker;
 $('picker').onclick = (e) => { if (e.target === $('picker')) closePicker(); };
 $('mute').onclick = () => { $('mute').textContent = sfx.toggle() ? '🔇' : '🔊'; sfx.click(); };
 $('mute').textContent = sfx.muted ? '🔇' : '🔊';
 $('quests-btn').onclick = () => { sfx.click(); $('quests').hidden = !$('quests').hidden; if (!$('quests').hidden) renderQuests(); };
-$('needs').onclick = () => {
-  const rec = [...city.recs.values()].find((r) => r.s.status === 'waiting');
+// ---------- sessions that just finished ----------
+// Highlights the one or two newest sessions that finished their turn and are
+// still open, until you look at them, so you know which terminal to check.
+function updateFinished() {
+  const shown = [...city.recs.values()].map((r) => r.s);
+  if (state.statuses) {
+    for (const s of justFinished(state.statuses, shown)) {
+      toast(`✅ Finished: ${s.title || 'a session'} · ${s.project}${s.branch ? ' · ' + s.branch : ''}`, true);
+      sfx.quest();
+    }
+  }
+  state.statuses = new Map(shown.map((s) => [s.id, s.status]));
+  state.done = finished(shown, state.doneSeen);
+  city.setDone(new Set(state.done.map((s) => s.id)));
+  renderFinished();
+}
+
+function markSeen(s) {
+  if (!state.done.some((d) => d.id === s.id)) return;
+  state.doneSeen[s.id] = s.lastActivity;
+  state.doneSeen = pruneSeen(state.doneSeen, allSessions());
+  store.setJson('sc.done', state.doneSeen);
+  updateFinished();
+}
+
+function renderFinished() {
+  const n = state.done.length, btn = $('done');
+  btn.hidden = !n;
+  btn.textContent = `✅ ${n} finished`;
+  btn.title = state.done.map((s) => `${s.title || 'Untitled session'} · ${s.project} · ${ago(s.lastActivity)}`).join('\n');
+  // the tab title tells you too, when the city is in a background tab
+  const waiting = [...city.recs.values()].filter((r) => r.s.status === 'waiting').length;
+  const marks = [n && `✓${n}`, waiting && `!${waiting}`].filter(Boolean).join(' ');
+  document.title = (marks ? `(${marks}) ` : '') + 'Session City';
+}
+
+$('done').onclick = () => { // visits the newest finished session (looking at it clears it)
+  const s = state.done[0];
+  const rec = s && city.recs.get(s.id);
   if (!rec) return;
+  if (state.scene === 'room') leave();
+  city.focus(rec);
+  selectBuilding(rec);
+};
+
+let needsLast = null;
+$('needs').onclick = () => { // each click visits the next session that needs you
+  const list = [...city.recs.values()].filter((r) => r.s.status === 'waiting');
+  if (!list.length) return;
+  const rec = list[(list.findIndex((r) => r.s.id === needsLast) + 1) % list.length];
+  needsLast = rec.s.id;
   if (state.scene === 'room') leave();
   city.focus(rec);
   selectBuilding(rec);
@@ -554,21 +669,52 @@ $('needs').onclick = () => {
 $('share-btn').onclick = () => {
   if (!city.recs.size) return;
   openShare($('share'), (showNames) => {
-    const vis = city.labels.map((l) => l.visible);
-    city.labels.forEach((l) => { l.visible = showNames; });
     city.render();
-    const out = renderPostcard(city.renderer.domElement, cityStats(city.L), { night: nightAmount() });
-    city.labels.forEach((l, i) => { l.visible = vis[i]; });
+    const out = renderPostcard(withNames(city.renderer.domElement, showNames ? labels.snapshot() : []), cityStats(city.L), { night: nightAmount() });
     return { canvas: out, stats: cityStats(city.L) };
   });
 };
+
+// The render with the district names that are on screen painted on top
+// (the names live in HTML, so a plain canvas copy would leave them out).
+function withNames(src, names) {
+  if (!names.length) return src;
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d'), k = src.width / src.getBoundingClientRect().width;
+  g.drawImage(src, 0, 0);
+  g.font = `800 ${Math.round(14 * k)}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const n of names) {
+    const w = g.measureText(n.text).width + 20 * k, h = 26 * k, x = n.x * k, y = n.y * k;
+    g.fillStyle = 'rgba(255,250,240,.94)';
+    g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, h, 9 * k); g.fill();
+    g.fillStyle = '#3b2f22';
+    g.fillText(n.text, x, y + k);
+  }
+  return c;
+}
 
 $('legend').innerHTML = Object.values(KINDS)
   .map((k) => `<div><span class="sw" style="background:${k.color}"></span> ${k.label}</div><div class="muted">${k.desc}</div>`)
   .join('');
 
+function openRules() { $('rules').hidden = false; $('rules-go').focus(); }
+function closeRules() {
+  $('rules').hidden = true;
+  const first = !store.get('sc.rules');
+  store.set('sc.rules', '1');
+  if (first && !store.get('sc.car') && !DEMO) setTimeout(openPicker, 300);
+}
+
 document.addEventListener('keydown', (e) => {
+  if (e.target.closest?.('input, textarea, select')) return;
+  if (e.key.toLowerCase() === 'm' && state.scene === 'city' && !e.metaKey && !e.ctrlKey) { minimap.toggleBig(); return; }
+  if (e.key === '?') { openRules(); return; }
   if (e.key !== 'Escape') return;
+  if (!$('story').hidden) return closeStory();
+  if (!$('rules').hidden) return closeRules();
+  if (minimap.big) return minimap.toggleBig(false);
   if (!$('share').hidden) return;
   if (!$('picker').hidden) return closePicker();
   if (state.scene === 'room') return leave();
