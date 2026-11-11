@@ -211,6 +211,14 @@
   #minimap.big canvas { width: calc(min(86vmin, 760px) - 16px); height: calc(min(86vmin, 760px) - 16px); border-radius: 16px; }
   #minimap.big .expand { top: 14px; right: 14px; }
 
+  /* the session story, over the game */
+  .story-sheet { width: min(940px, 100%); height: min(88vh, 960px); padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .story-head { display: flex; align-items: center; gap: 12px; padding: 12px 60px 12px 18px; border-bottom: 2px solid var(--panel-edge); }
+  .story-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+  .story-head a { font-weight: 700; font-size: 13px; color: var(--accent-dark); white-space: nowrap; }
+  .story-head .x { top: 10px; }
+  #story-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+
   /* how to play */
   .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .rules > div { background: var(--soft); border-radius: 14px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
@@ -326,6 +334,17 @@
   </div>
 </div>
 <div id="share" class="modal" hidden></div>
+<div id="story" class="modal" hidden>
+  <div class="sheet story-sheet" role="dialog" aria-modal="true" aria-labelledby="story-title">
+    <div class="story-head">
+      <span class="muted" style="font-weight:800">📖 Story</span>
+      <b id="story-title"></b>
+      <a id="story-open" target="_blank" rel="noopener">Open in a new tab ↗</a>
+      <button class="x" id="story-x" aria-label="Close">✕</button>
+    </div>
+    <iframe id="story-frame" title="Session story"></iframe>
+  </div>
+</div>
 <div id="loading">Building your city…</div>
 
 <script type="module" src="/app.js"></script>

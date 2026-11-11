@@ -212,7 +212,7 @@ function renderCard() {
     city.driveTo(rec);
     renderCard();
   };
-  $('card-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('card-story')?.addEventListener('click', (e) => openStory(e, s));
 }
 
 function closeCard() {
@@ -377,7 +377,7 @@ function renderHud() {
       <button id="copy">Copy resume command</button>
     </details>`;
   $('leave').onclick = leave;
-  $('hud-story')?.addEventListener('click', () => questsDone(progress(game, 'story', 1)));
+  $('hud-story')?.addEventListener('click', (e) => openStory(e, s));
   $('copy').onclick = (e) => navigator.clipboard?.writeText(resume).then(() => { e.target.textContent = 'Copied'; });
   renderFeed();
 }
@@ -388,6 +388,25 @@ function renderFeed() {
   feed.innerHTML = state.activity.length
     ? state.activity.slice(0, 6).map((a) => `<li class="${a.failed ? 'bad' : ''}"><span title="${esc(a.text)}">${esc(a.text)}</span><time>${a.at ? ago(a.at) : ''}</time></li>`).join('')
     : '<li class="muted">Loading…</li>';
+}
+
+// The story opens over the game, so you stay in your city. Ctrl/Cmd/Shift-click
+// still opens it in its own tab.
+function openStory(e, s) {
+  questsDone(progress(game, 'story', 1));
+  if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+  e.preventDefault();
+  sfx.click();
+  const url = e.currentTarget.href;
+  $('story-title').textContent = s.title || 'Untitled session';
+  $('story-open').href = url;
+  $('story-frame').src = url;
+  $('story').hidden = false;
+  $('story-x').focus();
+}
+function closeStory() {
+  $('story').hidden = true;
+  $('story-frame').src = 'about:blank';
 }
 
 function bubbleText(s) {
@@ -564,6 +583,17 @@ $('sky').onclick = () => {
 $('me').onclick = openPicker;
 $('help').onclick = () => { sfx.click(); openRules(); };
 $('rules-x').onclick = closeRules;
+$('story-x').onclick = closeStory;
+$('story').onclick = (e) => { if (e.target === $('story')) closeStory(); };
+// Escape pressed while reading (inside the frame) closes the story too
+$('story-frame').addEventListener('load', () => {
+  try {
+    const win = $('story-frame').contentWindow;
+    win.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeStory(); });
+    // the page's own "back to the city" link would load a second city inside the frame
+    for (const link of win.document.querySelectorAll('a[href="/"]')) link.addEventListener('click', (e) => { e.preventDefault(); closeStory(); });
+  } catch { /* not same-origin */ }
+});
 $('rules-go').onclick = closeRules;
 $('rules').onclick = (e) => { if (e.target === $('rules')) closeRules(); };
 $('minimap').querySelector('.expand').onclick = () => { sfx.click(); minimap.toggleBig(); };
@@ -629,6 +659,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key.toLowerCase() === 'm' && state.scene === 'city' && !e.metaKey && !e.ctrlKey) { minimap.toggleBig(); return; }
   if (e.key === '?') { openRules(); return; }
   if (e.key !== 'Escape') return;
+  if (!$('story').hidden) return closeStory();
   if (!$('rules').hidden) return closeRules();
   if (minimap.big) return minimap.toggleBig(false);
   if (!$('share').hidden) return;
